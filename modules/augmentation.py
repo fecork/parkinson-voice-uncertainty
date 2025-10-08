@@ -8,7 +8,7 @@ Augmentation strategies:
     - Spectrogram domain: SpecAugment, masking, mixup
 """
 
-from typing import Tuple, Optional, Union
+from typing import Tuple, Optional
 import numpy as np
 import librosa
 
@@ -39,7 +39,8 @@ def pitch_shift(audio: np.ndarray, sr: int, n_steps: float = 2.0) -> np.ndarray:
     Args:
         audio: Audio signal
         sr: Sample rate
-        n_steps: Number of semitones to shift (positive = up, negative = down)
+        n_steps: Number of semitones to shift
+                 (positive = up, negative = down)
 
     Returns:
         Pitch-shifted audio
@@ -60,7 +61,8 @@ def add_white_noise(audio: np.ndarray, noise_factor: float = 0.005) -> np.ndarra
     """
     noise = np.random.randn(len(audio))
     augmented = audio + noise_factor * noise
-    return augmented / np.max(np.abs(augmented))  # Normalize
+    # Normalize
+    return augmented / np.max(np.abs(augmented))
 
 
 def add_background_noise(
@@ -79,7 +81,8 @@ def add_background_noise(
     """
     # Ensure noise is same length as audio
     if len(noise_audio) < len(audio):
-        noise_audio = np.tile(noise_audio, int(np.ceil(len(audio) / len(noise_audio))))
+        repeats = int(np.ceil(len(audio) / len(noise_audio)))
+        noise_audio = np.tile(noise_audio, repeats)
     noise_audio = noise_audio[: len(audio)]
 
     # Calculate signal and noise power
@@ -334,3 +337,268 @@ def print_augmentation_config():
     print("\n  Spectrogram Domain:")
     for key, value in config["spectrogram"].items():
         print(f"    • {key}: {value}")
+
+
+# ============================================================
+# INTEGRATED AUGMENTATION PIPELINE
+# ============================================================
+
+
+def preprocess_audio_with_augmentation(
+    file_path: str,
+    vowel_type: str = "a",
+    aug_type: str = "original",
+    aug_params: Optional[dict] = None,
+    apply_spec_augment: bool = False,
+    spec_augment_params: Optional[dict] = None,
+):
+    """
+    Complete preprocessing pipeline WITH augmentation.
+
+    PIPELINE ORDER (CORRECTO):
+    1. Load audio completo
+    2. Apply augmentation → AUDIO COMPLETO (pitch/time/noise)
+    3. Segment into 400ms windows
+    4. Create Mel spectrograms (25ms/40ms FFT)
+    5. Apply SpecAugment (opcional) → SOBRE ESPECTROGRAMA
+    6. Normalize
+
+    Args:
+        file_path: Path to audio file
+        vowel_type: Vowel type for FFT window selection
+        aug_type: Type of augmentation to apply:
+                  - "original": no augmentation
+                  - "pitch_shift": pitch shifting
+                  - "time_stretch": time stretching
+                  - "noise": add white noise
+                  - "combined": all three
+        aug_params: Specific parameters for augmentation
+                   (pitch_steps, stretch_rate, noise_factor)
+        apply_spec_augment: Whether to apply SpecAugment
+        spec_augment_params: Parameters for SpecAugment
+                            (freq_mask_param, time_mask_param)
+
+    Returns:
+        spectrograms: List of normalized Mel spectrograms
+        segments: List of audio segments
+        aug_label: Label describing augmentation applied
+    """
+    from . import preprocessing
+
+    # 1. Load audio completo
+    audio, sr = preprocessing.load_audio_file(file_path)
+    if audio is None:
+        return None, None, None
+
+    aug_label = "original"
+
+    # 2. Apply augmentation AL AUDIO COMPLETO (antes de segmentar)
+    if aug_type != "original" and aug_params is not None:
+        if aug_type == "pitch_shift":
+            n_steps = aug_params.get("n_steps", 2)
+            audio = pitch_shift(audio, sr=sr, n_steps=n_steps)
+            aug_label = f"pitch_{n_steps:+d}"
+
+        elif aug_type == "time_stretch":
+            rate = aug_params.get("rate", 1.1)
+            audio = time_stretch(audio, rate=rate)
+            aug_label = f"time_{rate:.2f}x"
+
+        elif aug_type == "noise":
+            noise_factor = aug_params.get("noise_factor", 0.005)
+            audio = add_white_noise(audio, noise_factor=noise_factor)
+            aug_label = f"noise_{noise_factor:.4f}"
+
+        elif aug_type == "combined":
+            # Apply all three
+            n_steps = aug_params.get("n_steps", 1)
+            rate = aug_params.get("rate", 1.05)
+            noise_factor = aug_params.get("noise_factor", 0.003)
+
+            audio = pitch_shift(audio, sr=sr, n_steps=n_steps)
+            audio = time_stretch(audio, rate=rate)
+            audio = add_white_noise(audio, noise_factor=noise_factor)
+            aug_label = f"combined_{n_steps:+d}_{rate:.2f}_{noise_factor:.4f}"
+
+    # 3. Segment (DESPUÉS de augmentation de audio)
+    segments = preprocessing.segment_audio(audio, sr=sr)
+
+    # 4-5-6. Create Mel spectrograms, apply SpecAugment, normalize
+    spectrograms = []
+    for segment in segments:
+        mel_spec = preprocessing.create_mel_spectrogram(
+            segment,
+            sr=sr,
+            n_mels=preprocessing.N_MELS,
+            hop_length=int(preprocessing.HOP_MS * sr / 1000),
+            vowel_type=vowel_type,
+        )
+
+        # 5. Apply SpecAugment (opcional, DESPUÉS de crear espectrograma)
+        if apply_spec_augment:
+            if spec_augment_params is None:
+                spec_augment_params = {
+                    "freq_mask_param": 10,
+                    "time_mask_param": 5,
+                    "num_freq_masks": 2,
+                    "num_time_masks": 2,
+                }
+            mel_spec = spec_augment(mel_spec, **spec_augment_params)
+            if aug_label == "original":
+                aug_label = "spec_aug"
+            else:
+                aug_label += "_spec_aug"
+
+        # 6. Normalize
+        normalized_spec = preprocessing.normalize_spectrogram(mel_spec)
+        if normalized_spec.shape[1] != preprocessing.TARGET_FRAMES:
+            normalized_spec = librosa.util.fix_length(
+                normalized_spec, size=preprocessing.TARGET_FRAMES, axis=1
+            )
+
+        spectrograms.append(normalized_spec)
+
+    return spectrograms, segments, aug_label
+
+
+def _add_samples_to_dataset(
+    all_samples: list,
+    spectrograms: list,
+    segments: list,
+    aug_label: str,
+    subject_id: str,
+    vowel_type: str,
+    condition: str,
+    filename: str,
+    dataset_module,
+):
+    """Helper to avoid code duplication when adding samples."""
+    if spectrograms:
+        for j, (spec, seg) in enumerate(zip(spectrograms, segments)):
+            all_samples.append(
+                {
+                    "spectrogram": spec,
+                    "segment": seg,
+                    "metadata": dataset_module.SampleMeta(
+                        subject_id=subject_id,
+                        vowel_type=vowel_type,
+                        condition=condition,
+                        filename=filename,
+                        segment_id=j,
+                        sr=44100,
+                    ),
+                    "augmentation": aug_label,
+                }
+            )
+
+
+def create_augmented_dataset(
+    audio_files,
+    augmentation_types: list = None,
+    apply_spec_augment: bool = False,
+    progress_every: int = 5,
+):
+    """
+    Create a dataset with multiple augmentation versions.
+
+    Aplica augmentation en 2 niveles:
+    NIVEL 1 - Audio (antes de segmentar):
+      1. Pitch shifting: ±1, ±2 semitonos
+      2. Time stretching: 0.9x, 1.1x
+      3. Ruido aditivo: 0.005 (≈30 dB SNR)
+
+    NIVEL 2 - Espectrograma (después de Mel):
+      4. SpecAugment: frequency + time masking
+
+    Args:
+        audio_files: List of audio file paths
+        augmentation_types: List with:
+            ["original", "pitch_shift", "time_stretch", "noise"]
+            Default: all four types
+        apply_spec_augment: If True, apply SpecAugment to all samples
+        progress_every: Print progress frequency
+
+    Returns:
+        dataset: List of augmented samples
+    """
+    from . import dataset as dataset_module, preprocessing
+
+    if augmentation_types is None:
+        augmentation_types = ["original", "pitch_shift", "time_stretch", "noise"]
+
+    # Configuración de augmentation
+    AUG_CONFIGS = {
+        "pitch_shift": [("pitch_shift", {"n_steps": n}) for n in [-2, -1, 1, 2]],
+        "time_stretch": [("time_stretch", {"rate": r}) for r in [0.9, 1.1]],
+        "noise": [("noise", {"noise_factor": 0.005})],
+    }
+
+    print("🎨 Creando dataset con augmentation...")
+    n_files = len(audio_files)
+    types_preview = augmentation_types[:2]
+    print(f"   Archivos: {n_files} | Tipos: {types_preview}...")
+    if apply_spec_augment:
+        print("   ✨ SpecAugment: ACTIVADO")
+
+    all_samples = []
+
+    for i, file_path in enumerate(audio_files):
+        if i % progress_every == 0:
+            fname = getattr(file_path, "name", str(file_path))
+            print(f"  {i + 1}/{len(audio_files)}: {fname}")
+
+        # Parse metadata una sola vez
+        subject_id, vowel_type, condition = dataset_module.parse_filename(
+            getattr(file_path, "stem", str(file_path))
+        )
+        filename = getattr(file_path, "name", str(file_path))
+
+        # Original
+        if "original" in augmentation_types:
+            try:
+                specs, segs = preprocessing.preprocess_audio_paper(
+                    file_path, vowel_type=vowel_type
+                )
+                _add_samples_to_dataset(
+                    all_samples,
+                    specs,
+                    segs,
+                    "original",
+                    subject_id,
+                    vowel_type,
+                    condition,
+                    filename,
+                    dataset_module,
+                )
+            except Exception as e:
+                print(f"    ⚠️  Error original: {e}")
+
+        # Procesar augmentations configuradas
+        for aug_type in augmentation_types:
+            if aug_type in AUG_CONFIGS:
+                for aug_name, aug_params in AUG_CONFIGS[aug_type]:
+                    try:
+                        specs, segs, aug_label = preprocess_audio_with_augmentation(
+                            file_path,
+                            vowel_type=vowel_type,
+                            aug_type=aug_name,
+                            aug_params=aug_params,
+                            apply_spec_augment=apply_spec_augment,
+                        )
+                        _add_samples_to_dataset(
+                            all_samples,
+                            specs,
+                            segs,
+                            aug_label,
+                            subject_id,
+                            vowel_type,
+                            condition,
+                            filename,
+                            dataset_module,
+                        )
+                    except Exception as e:
+                        params_str = f"{aug_params}"
+                        print(f"    ⚠️  Error {aug_name} {params_str}: {e}")
+
+    print(f"\n✅ Dataset: {len(all_samples)} muestras totales")
+    return all_samples
