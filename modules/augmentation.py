@@ -496,10 +496,14 @@ def create_augmented_dataset(
     audio_files,
     augmentation_types: list = None,
     apply_spec_augment: bool = False,
+    num_spec_augment_versions: int = 1,
     progress_every: int = 5,
+    use_cache: bool = True,
+    cache_dir: str = "./cache",
+    force_regenerate: bool = False,
 ):
     """
-    Create a dataset with multiple augmentation versions.
+    Create a dataset with multiple augmentation versions WITH CACHING.
 
     Aplica augmentation en 2 niveles:
     NIVEL 1 - Audio (antes de segmentar):
@@ -515,17 +519,63 @@ def create_augmented_dataset(
         augmentation_types: List with:
             ["original", "pitch_shift", "time_stretch", "noise"]
             Default: all four types
-        apply_spec_augment: If True, apply SpecAugment to all samples
+        apply_spec_augment: If True, apply SpecAugment
+        num_spec_augment_versions: Number of SpecAugment versions per sample
+            (e.g., 2 = original + 2 masked versions = 3x data)
+            Default: 1 (reemplaza original con 1 versión enmascarada)
         progress_every: Print progress frequency
+        use_cache: If True, save/load from cache (recommended for Colab)
+        cache_dir: Directory to store cached augmented data
+        force_regenerate: If True, ignore cache and regenerate
 
     Returns:
         dataset: List of augmented samples
     """
     from . import dataset as dataset_module, preprocessing
+    import os
+    import pickle
+    import hashlib
 
     if augmentation_types is None:
         augmentation_types = ["original", "pitch_shift", "time_stretch", "noise"]
 
+    # ============================================================
+    # CACHE MANAGEMENT
+    # ============================================================
+    if use_cache:
+        # Create cache directory
+        os.makedirs(cache_dir, exist_ok=True)
+
+        # Generate unique cache key based on:
+        # - Number of files
+        # - Augmentation types
+        # - SpecAugment flag and versions
+        cache_key_data = (
+            f"{len(audio_files)}_{sorted(augmentation_types)}_"
+            f"{apply_spec_augment}_{num_spec_augment_versions}"
+        )
+        cache_key = hashlib.md5(cache_key_data.encode()).hexdigest()[:8]
+        cache_file = os.path.join(cache_dir, f"augmented_dataset_{cache_key}.pkl")
+
+        # Try to load from cache
+        if os.path.exists(cache_file) and not force_regenerate:
+            print("💾 Cargando dataset desde cache...")
+            print("   📁 " + cache_file)
+            try:
+                with open(cache_file, "rb") as f:
+                    all_samples = pickle.load(f)
+                n_samples = len(all_samples)
+                print(f"✅ Cache cargado exitosamente: {n_samples} muestras")
+                time_saved = len(audio_files) * 0.5
+                print(f"⚡ Tiempo ahorrado: ~{time_saved:.1f} min")
+                return all_samples
+            except Exception as e:
+                print(f"⚠️  Error leyendo cache: {e}")
+                print("   Regenerando dataset...")
+
+    # ============================================================
+    # GENERATE DATASET (if cache miss or disabled)
+    # ============================================================
     # Configuración de augmentation
     AUG_CONFIGS = {
         "pitch_shift": [("pitch_shift", {"n_steps": n}) for n in [-2, -1, 1, 2]],
@@ -553,7 +603,7 @@ def create_augmented_dataset(
         )
         filename = getattr(file_path, "name", str(file_path))
 
-        # Original
+        # Original (sin SpecAugment)
         if "original" in augmentation_types:
             try:
                 specs, segs = preprocessing.preprocess_audio_paper(
@@ -573,18 +623,19 @@ def create_augmented_dataset(
             except Exception as e:
                 print(f"    ⚠️  Error original: {e}")
 
-        # Procesar augmentations configuradas
-        for aug_type in augmentation_types:
-            if aug_type in AUG_CONFIGS:
-                for aug_name, aug_params in AUG_CONFIGS[aug_type]:
+            # Generar versiones con SpecAugment si está activado
+            if apply_spec_augment and num_spec_augment_versions > 0:
+                for spec_ver in range(num_spec_augment_versions):
                     try:
-                        specs, segs, aug_label = preprocess_audio_with_augmentation(
+                        result = preprocess_audio_with_augmentation(
                             file_path,
                             vowel_type=vowel_type,
-                            aug_type=aug_name,
-                            aug_params=aug_params,
-                            apply_spec_augment=apply_spec_augment,
+                            aug_type="original",
+                            aug_params=None,
+                            apply_spec_augment=True,
                         )
+                        specs, segs, _ = result
+                        aug_label = f"spec_aug_v{spec_ver + 1}"
                         _add_samples_to_dataset(
                             all_samples,
                             specs,
@@ -597,8 +648,53 @@ def create_augmented_dataset(
                             dataset_module,
                         )
                     except Exception as e:
-                        params_str = f"{aug_params}"
+                        print(f"    ⚠️  Error SpecAugment v{spec_ver + 1}: {e}")
+
+        # Procesar augmentations configuradas (audio augmentations)
+        # SpecAugment se maneja por separado arriba
+        for aug_type in augmentation_types:
+            if aug_type in AUG_CONFIGS:
+                for aug_name, aug_params in AUG_CONFIGS[aug_type]:
+                    try:
+                        # No aplicar SpecAugment aquí (se maneja separadamente)
+                        result = preprocess_audio_with_augmentation(
+                            file_path,
+                            vowel_type=vowel_type,
+                            aug_type=aug_name,
+                            aug_params=aug_params,
+                            apply_spec_augment=False,
+                        )
+                        specs, segs, aug_label = result
+                        _add_samples_to_dataset(
+                            all_samples,
+                            specs,
+                            segs,
+                            aug_label,
+                            subject_id,
+                            vowel_type,
+                            condition,
+                            filename,
+                            dataset_module,
+                        )
+                    except Exception as e:
+                        params_str = str(aug_params)
                         print(f"    ⚠️  Error {aug_name} {params_str}: {e}")
 
     print(f"\n✅ Dataset: {len(all_samples)} muestras totales")
+
+    # ============================================================
+    # SAVE TO CACHE
+    # ============================================================
+    if use_cache and all_samples:
+        print("💾 Guardando dataset en cache...")
+        print("   📁 " + cache_file)
+        try:
+            with open(cache_file, "wb") as f:
+                pickle.dump(all_samples, f, protocol=pickle.HIGHEST_PROTOCOL)
+            file_size_mb = os.path.getsize(cache_file) / (1024 * 1024)
+            print(f"✅ Cache guardado: {file_size_mb:.1f} MB")
+            print("💡 Próxima ejecución será instantánea!")
+        except Exception as e:
+            print(f"⚠️  Error guardando cache: {e}")
+
     return all_samples

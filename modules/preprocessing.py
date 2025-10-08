@@ -22,9 +22,12 @@ WINDOW_MS = 400  # ms
 OVERLAP = 0.5  # 50%
 N_MELS = 65  # Mel bands
 HOP_MS = 10  # ms
-FFT_WINDOW_A = 40  # ms para vocal /a/
-FFT_WINDOW_OTHER = 25  # ms para otras vocales
+FFT_WINDOW = 40  # ms para todas las vocales sostenidas
 TARGET_FRAMES = 41  # frames por espectrograma
+
+# Constantes legacy (para compatibilidad)
+FFT_WINDOW_A = 40  # ms (deprecado - usar FFT_WINDOW)
+FFT_WINDOW_OTHER = 40  # ms (cambiado de 25ms a 40ms)
 
 
 # ============================================================
@@ -102,8 +105,8 @@ def create_mel_spectrogram(
         sr: Sample rate
         n_mels: Number of Mel bands (default: 65)
         hop_length: Hop length in samples (default: 10ms)
-        window_length: FFT window length (default: vowel-dependent)
-        vowel_type: Vowel type ('a' uses 40ms, others use 25ms)
+        window_length: FFT window length (default: 40ms todas vocales)
+        vowel_type: Vowel type (compatibilidad, no afecta ventana)
 
     Returns:
         Mel spectrogram in dB
@@ -112,8 +115,8 @@ def create_mel_spectrogram(
         hop_length = int(HOP_MS * sr / 1000)
 
     if window_length is None:
-        fft_ms = FFT_WINDOW_A if vowel_type == "a" else FFT_WINDOW_OTHER
-        window_length = int(fft_ms * sr / 1000)
+        # Todas las vocales sostenidas usan ventana de 40ms
+        window_length = int(FFT_WINDOW * sr / 1000)
 
     mel_spec = librosa.feature.melspectrogram(
         y=segment,
@@ -205,8 +208,7 @@ def get_preprocessing_config() -> dict:
         "OVERLAP": OVERLAP,
         "N_MELS": N_MELS,
         "HOP_MS": HOP_MS,
-        "FFT_WINDOW_A": FFT_WINDOW_A,
-        "FFT_WINDOW_OTHER": FFT_WINDOW_OTHER,
+        "FFT_WINDOW": FFT_WINDOW,
         "TARGET_FRAMES": TARGET_FRAMES,
     }
 

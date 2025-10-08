@@ -12,5 +12,13 @@ from . import augmentation
 from . import dataset
 from . import utils
 from . import visualization
+from . import cache_utils
 
-__all__ = ["preprocessing", "augmentation", "dataset", "utils", "visualization"]
+__all__ = [
+    "preprocessing",
+    "augmentation",
+    "dataset",
+    "utils",
+    "visualization",
+    "cache_utils",
+]
