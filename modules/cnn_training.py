@@ -515,3 +515,474 @@ def load_checkpoint(
     print(f"   Val Loss: {checkpoint.get('val_loss', 'N/A'):.4f}")
 
     return checkpoint
+
+
+# ============================================================
+# DOMAIN ADAPTATION TRAINING
+# ============================================================
+
+
+def compute_lambda_schedule(
+    epoch: int, max_epoch: int, gamma: float = 10.0, power: float = 0.75
+) -> float:
+    """
+    Calcula el factor lambda para GRL según un scheduler progresivo.
+
+    Formula (Ganin & Lempitsky 2015):
+        lambda_p = 2 / (1 + exp(-gamma * p)) ** power - 1
+        donde p = epoch / max_epoch
+
+    Args:
+        epoch: Época actual
+        max_epoch: Número máximo de épocas
+        gamma: Parámetro de progresión (default: 10.0)
+        power: Exponente (default: 0.75)
+
+    Returns:
+        Valor de lambda entre 0 y ~1
+    """
+    p = epoch / max(max_epoch, 1)
+    lambda_p = 2.0 / (1.0 + np.exp(-gamma * p)) ** power - 1.0
+    return max(0.0, min(1.0, lambda_p))  # Clip entre [0, 1]
+
+
+def train_one_epoch_da(
+    model: nn.Module,
+    loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    criterion_pd: nn.Module,
+    criterion_domain: nn.Module,
+    device: torch.device,
+    alpha: float = 1.0,
+    lambda_: float = 1.0,
+) -> Dict[str, float]:
+    """
+    Entrena por una época con Domain Adaptation.
+
+    Args:
+        model: Modelo PyTorch con DA (debe retornar logits_pd, logits_domain)
+        loader: DataLoader de entrenamiento (debe contener specs, labels_pd, labels_domain)
+        optimizer: Optimizador
+        criterion_pd: Función de pérdida para tarea PD
+        criterion_domain: Función de pérdida para tarea de dominio
+        device: Device para cómputo
+        alpha: Peso de la pérdida de dominio (default: 1.0)
+        lambda_: Factor para GRL (default: 1.0)
+
+    Returns:
+        Dict con métricas: loss_pd, loss_domain, loss_total, acc_pd, acc_domain
+    """
+    model.train()
+
+    # Actualizar lambda del GRL
+    if hasattr(model, "set_lambda"):
+        model.set_lambda(lambda_)
+
+    total_loss_pd = 0.0
+    total_loss_domain = 0.0
+    total_loss = 0.0
+    all_preds_pd = []
+    all_labels_pd = []
+    all_preds_domain = []
+    all_labels_domain = []
+
+    for batch in loader:
+        # Desempaquetar batch
+        if len(batch) == 3:
+            specs, labels_pd, labels_domain = batch
+            specs = specs.to(device)
+            labels_pd = labels_pd.to(device)
+            labels_domain = labels_domain.to(device)
+        else:
+            # Compatibilidad con formato dict
+            specs = batch["spectrogram"].to(device)
+            labels_pd = batch["label"].to(device)
+            labels_domain = batch.get("domain", torch.zeros_like(labels_pd)).to(device)
+
+        # Forward pass
+        logits_pd, logits_domain = model(specs)
+
+        # Calcular pérdidas
+        loss_pd = criterion_pd(logits_pd, labels_pd)
+        loss_domain = criterion_domain(logits_domain, labels_domain)
+        loss = loss_pd + alpha * loss_domain
+
+        # Backward pass
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # Métricas
+        batch_size = specs.size(0)
+        total_loss_pd += loss_pd.item() * batch_size
+        total_loss_domain += loss_domain.item() * batch_size
+        total_loss += loss.item() * batch_size
+
+        preds_pd = logits_pd.argmax(dim=1)
+        preds_domain = logits_domain.argmax(dim=1)
+
+        all_preds_pd.extend(preds_pd.cpu().numpy())
+        all_labels_pd.extend(labels_pd.cpu().numpy())
+        all_preds_domain.extend(preds_domain.cpu().numpy())
+        all_labels_domain.extend(labels_domain.cpu().numpy())
+
+    # Calcular métricas promedio
+    n_samples = len(all_labels_pd)
+
+    metrics = {
+        "loss_pd": total_loss_pd / n_samples,
+        "loss_domain": total_loss_domain / n_samples,
+        "loss_total": total_loss / n_samples,
+        "acc_pd": accuracy_score(all_labels_pd, all_preds_pd),
+        "acc_domain": accuracy_score(all_labels_domain, all_preds_domain),
+        "f1_pd": f1_score(all_labels_pd, all_preds_pd, zero_division=0),
+    }
+
+    return metrics
+
+
+@torch.no_grad()
+def evaluate_da(
+    model: nn.Module,
+    loader: DataLoader,
+    criterion_pd: nn.Module,
+    criterion_domain: nn.Module,
+    device: torch.device,
+    alpha: float = 1.0,
+) -> Dict[str, float]:
+    """
+    Evalúa el modelo con Domain Adaptation.
+
+    Args:
+        model: Modelo PyTorch con DA
+        loader: DataLoader de evaluación
+        criterion_pd: Función de pérdida para tarea PD
+        criterion_domain: Función de pérdida para tarea de dominio
+        device: Device para cómputo
+        alpha: Peso de la pérdida de dominio
+
+    Returns:
+        Dict con métricas: loss_pd, loss_domain, loss_total, acc_pd, acc_domain
+    """
+    model.eval()
+
+    total_loss_pd = 0.0
+    total_loss_domain = 0.0
+    total_loss = 0.0
+    all_preds_pd = []
+    all_labels_pd = []
+    all_preds_domain = []
+    all_labels_domain = []
+
+    for batch in loader:
+        # Desempaquetar batch
+        if len(batch) == 3:
+            specs, labels_pd, labels_domain = batch
+            specs = specs.to(device)
+            labels_pd = labels_pd.to(device)
+            labels_domain = labels_domain.to(device)
+        else:
+            specs = batch["spectrogram"].to(device)
+            labels_pd = batch["label"].to(device)
+            labels_domain = batch.get("domain", torch.zeros_like(labels_pd)).to(device)
+
+        # Forward pass
+        logits_pd, logits_domain = model(specs)
+
+        # Calcular pérdidas
+        loss_pd = criterion_pd(logits_pd, labels_pd)
+        loss_domain = criterion_domain(logits_domain, labels_domain)
+        loss = loss_pd + alpha * loss_domain
+
+        # Métricas
+        batch_size = specs.size(0)
+        total_loss_pd += loss_pd.item() * batch_size
+        total_loss_domain += loss_domain.item() * batch_size
+        total_loss += loss.item() * batch_size
+
+        preds_pd = logits_pd.argmax(dim=1)
+        preds_domain = logits_domain.argmax(dim=1)
+
+        all_preds_pd.extend(preds_pd.cpu().numpy())
+        all_labels_pd.extend(labels_pd.cpu().numpy())
+        all_preds_domain.extend(preds_domain.cpu().numpy())
+        all_labels_domain.extend(labels_domain.cpu().numpy())
+
+    # Calcular métricas promedio
+    n_samples = len(all_labels_pd)
+
+    metrics = {
+        "loss_pd": total_loss_pd / n_samples,
+        "loss_domain": total_loss_domain / n_samples,
+        "loss_total": total_loss / n_samples,
+        "acc_pd": accuracy_score(all_labels_pd, all_preds_pd),
+        "acc_domain": accuracy_score(all_labels_domain, all_preds_domain),
+        "f1_pd": f1_score(all_labels_pd, all_preds_pd, zero_division=0),
+        "precision_pd": precision_score(all_labels_pd, all_preds_pd, zero_division=0),
+        "recall_pd": recall_score(all_labels_pd, all_preds_pd, zero_division=0),
+    }
+
+    return metrics
+
+
+def train_model_da(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    criterion_pd: nn.Module,
+    criterion_domain: nn.Module,
+    device: torch.device,
+    n_epochs: int = 100,
+    alpha: float = 1.0,
+    lambda_scheduler: Optional[callable] = None,
+    early_stopping_patience: int = 15,
+    save_dir: Optional[Path] = None,
+    verbose: bool = True,
+) -> Dict:
+    """
+    Pipeline completo de entrenamiento con Domain Adaptation.
+
+    Args:
+        model: Modelo PyTorch con DA
+        train_loader: DataLoader de entrenamiento
+        val_loader: DataLoader de validación
+        optimizer: Optimizador
+        criterion_pd: Función de pérdida para tarea PD
+        criterion_domain: Función de pérdida para tarea de dominio
+        device: Device para cómputo
+        n_epochs: Número máximo de épocas
+        alpha: Peso de la pérdida de dominio
+        lambda_scheduler: Función para calcular lambda(epoch) -> float
+                         Si None, usa lambda=1.0 constante
+        early_stopping_patience: Paciencia para early stopping
+        save_dir: Directorio para guardar checkpoints
+        verbose: Si True, imprime progreso
+
+    Returns:
+        Dict con historial de entrenamiento y mejor modelo
+    """
+    if save_dir is not None:
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+    # Early stopping basado en val_loss_pd (tarea principal)
+    early_stopping = EarlyStopping(
+        patience=early_stopping_patience,
+        mode="min",
+    )
+
+    # Historial
+    history = {
+        "train_loss_pd": [],
+        "train_loss_domain": [],
+        "train_loss_total": [],
+        "train_acc_pd": [],
+        "train_f1_pd": [],
+        "val_loss_pd": [],
+        "val_loss_domain": [],
+        "val_loss_total": [],
+        "val_acc_pd": [],
+        "val_f1_pd": [],
+        "lambda_values": [],
+    }
+
+    best_val_loss_pd = float("inf")
+    best_model_state = None
+
+    if verbose:
+        print("\n" + "=" * 70)
+        print("INICIO DE ENTRENAMIENTO CON DOMAIN ADAPTATION")
+        print("=" * 70)
+        print(f"Épocas máximas: {n_epochs}")
+        print(f"Early stopping patience: {early_stopping_patience}")
+        print(f"Alpha (peso dominio): {alpha}")
+        print(f"Device: {device}")
+        print("=" * 70 + "\n")
+
+    start_time = time.time()
+
+    for epoch in range(n_epochs):
+        epoch_start = time.time()
+
+        # Calcular lambda para esta época
+        if lambda_scheduler is not None:
+            lambda_ = lambda_scheduler(epoch)
+        else:
+            lambda_ = 1.0
+
+        # Entrenar
+        train_metrics = train_one_epoch_da(
+            model,
+            train_loader,
+            optimizer,
+            criterion_pd,
+            criterion_domain,
+            device,
+            alpha=alpha,
+            lambda_=lambda_,
+        )
+
+        # Validar
+        val_metrics = evaluate_da(
+            model, val_loader, criterion_pd, criterion_domain, device, alpha=alpha
+        )
+
+        # Guardar historial
+        history["train_loss_pd"].append(train_metrics["loss_pd"])
+        history["train_loss_domain"].append(train_metrics["loss_domain"])
+        history["train_loss_total"].append(train_metrics["loss_total"])
+        history["train_acc_pd"].append(train_metrics["acc_pd"])
+        history["train_f1_pd"].append(train_metrics["f1_pd"])
+        history["val_loss_pd"].append(val_metrics["loss_pd"])
+        history["val_loss_domain"].append(val_metrics["loss_domain"])
+        history["val_loss_total"].append(val_metrics["loss_total"])
+        history["val_acc_pd"].append(val_metrics["acc_pd"])
+        history["val_f1_pd"].append(val_metrics["f1_pd"])
+        history["lambda_values"].append(lambda_)
+
+        # Guardar mejor modelo
+        if val_metrics["loss_pd"] < best_val_loss_pd:
+            best_val_loss_pd = val_metrics["loss_pd"]
+            best_model_state = model.state_dict().copy()
+
+            if save_dir is not None:
+                checkpoint_path = save_dir / "best_model_da.pth"
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": best_model_state,
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "val_loss_pd": best_val_loss_pd,
+                        "val_metrics": val_metrics,
+                        "alpha": alpha,
+                    },
+                    checkpoint_path,
+                )
+
+        epoch_time = time.time() - epoch_start
+
+        # Imprimir progreso
+        if verbose:
+            print(
+                f"Época {epoch + 1:3d}/{n_epochs} | "
+                f"λ={lambda_:.3f} | "
+                f"Train: L_PD={train_metrics['loss_pd']:.4f} "
+                f"L_Dom={train_metrics['loss_domain']:.4f} | "
+                f"Val: L_PD={val_metrics['loss_pd']:.4f} "
+                f"F1={val_metrics['f1_pd']:.4f} | "
+                f"{epoch_time:.1f}s"
+            )
+
+        # Early stopping
+        if early_stopping(val_metrics["loss_pd"], epoch):
+            if verbose:
+                print(f"\n⚠️  Early stopping en época {epoch + 1}")
+                print(f"    Mejor época: {early_stopping.best_epoch + 1}")
+                print(f"    Mejor val_loss_pd: {early_stopping.best_score:.4f}")
+            break
+
+    total_time = time.time() - start_time
+
+    if verbose:
+        print("\n" + "=" * 70)
+        print("ENTRENAMIENTO COMPLETADO")
+        print("=" * 70)
+        print(f"Tiempo total: {total_time / 60:.1f} minutos")
+        print(f"Mejor val_loss_pd: {best_val_loss_pd:.4f}")
+        print("=" * 70 + "\n")
+
+    # Restaurar mejor modelo
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+
+    return {
+        "model": model,
+        "history": history,
+        "best_val_loss_pd": best_val_loss_pd,
+        "total_time": total_time,
+    }
+
+
+@torch.no_grad()
+def evaluate_by_patient_da(
+    model: nn.Module,
+    test_data: tuple,
+    device: torch.device,
+    class_names: Optional[List[str]] = None,
+) -> Dict:
+    """
+    Evaluación por paciente con agregación de probabilidades.
+
+    Agrupa predicciones por subject_id y promedia probabilidades
+    antes de hacer la predicción final (más realista que por segmento).
+
+    Args:
+        model: Modelo PyTorch con DA
+        test_data: Tupla (X_test, y_test, metadata) donde metadata es lista de dicts
+                   con 'subject_id'
+        device: Device para cómputo
+        class_names: Nombres de clases (default: ['HC', 'PD'])
+
+    Returns:
+        Dict con métricas a nivel paciente
+    """
+    if class_names is None:
+        class_names = ["HC", "PD"]
+
+    model.eval()
+
+    X_test, y_test, metadata = test_data
+    X_test = X_test.to(device)
+
+    # Forward pass para obtener probabilidades
+    logits_pd, _ = model(X_test)
+    probs = torch.softmax(logits_pd, dim=1).cpu().numpy()
+
+    # Agrupar por paciente
+    patient_probs = {}
+    patient_labels = {}
+
+    for i, meta in enumerate(metadata):
+        subject_id = meta.get("subject_id", f"unknown_{i}")
+        label = y_test[i].item() if isinstance(y_test[i], torch.Tensor) else y_test[i]
+
+        if subject_id not in patient_probs:
+            patient_probs[subject_id] = []
+            patient_labels[subject_id] = label
+
+        patient_probs[subject_id].append(probs[i])
+
+    # Agregar probabilidades por paciente
+    patient_predictions = []
+    patient_true_labels = []
+
+    for subject_id in patient_probs.keys():
+        # Promedio de probabilidades
+        avg_probs = np.mean(patient_probs[subject_id], axis=0)
+        pred = np.argmax(avg_probs)
+
+        patient_predictions.append(pred)
+        patient_true_labels.append(patient_labels[subject_id])
+
+    # Calcular métricas
+    patient_predictions = np.array(patient_predictions)
+    patient_true_labels = np.array(patient_true_labels)
+
+    cm = confusion_matrix(patient_true_labels, patient_predictions)
+    report = classification_report(
+        patient_true_labels,
+        patient_predictions,
+        target_names=class_names,
+        output_dict=True,
+    )
+
+    return {
+        "predictions": patient_predictions,
+        "labels": patient_true_labels,
+        "confusion_matrix": cm,
+        "classification_report": report,
+        "accuracy": report["accuracy"],
+        "f1_macro": report["macro avg"]["f1-score"],
+        "n_patients": len(patient_predictions),
+    }

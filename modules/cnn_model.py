@@ -331,8 +331,299 @@ def print_model_summary(model: nn.Module):
 # ============================================================
 
 
+# ============================================================
+# DOMAIN ADAPTATION ARCHITECTURE
+# ============================================================
+
+
+class GradientReversalFunction(torch.autograd.Function):
+    """
+    Función para inversión de gradiente (Gradient Reversal Layer).
+
+    Durante forward: pasa x sin cambios
+    Durante backward: invierte el gradiente y lo multiplica por lambda
+
+    Reference:
+        Ganin & Lempitsky (2015) "Unsupervised Domain Adaptation by Backpropagation"
+    """
+
+    @staticmethod
+    def forward(ctx, x, lambda_):
+        """Forward pass - identidad."""
+        ctx.lambda_ = lambda_
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        """Backward pass - invierte gradiente."""
+        return grad_output.neg() * ctx.lambda_, None
+
+
+class GradientReversalLayer(nn.Module):
+    """
+    Gradient Reversal Layer (GRL) para Domain Adaptation.
+
+    Invierte los gradientes durante backpropagation para hacer
+    las features invariantes al dominio.
+
+    Attributes:
+        lambda_: Factor de inversión de gradiente (0 a 1)
+    """
+
+    def __init__(self, lambda_: float = 1.0):
+        """
+        Args:
+            lambda_: Factor inicial de inversión (default: 1.0)
+        """
+        super().__init__()
+        self.lambda_ = lambda_
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Args:
+            x: Input tensor
+
+        Returns:
+            Output tensor (idéntico a input en forward)
+        """
+        return GradientReversalFunction.apply(x, self.lambda_)
+
+    def set_lambda(self, lambda_: float):
+        """Actualiza el factor lambda."""
+        self.lambda_ = lambda_
+
+
+class FeatureExtractor(nn.Module):
+    """
+    Extractor de características compartido para Domain Adaptation.
+
+    Arquitectura (según Ibarra et al. 2023):
+        - Bloque 1: Conv2d(32, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+        - Bloque 2: Conv2d(64, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+
+    Input shape: (B, 1, 65, 41)
+    Output shape: (B, 64, H', W')
+    """
+
+    def __init__(self, p_drop_conv: float = 0.3):
+        """
+        Args:
+            p_drop_conv: Probabilidad de dropout en capas convolucionales
+        """
+        super().__init__()
+        self.p_drop_conv = p_drop_conv
+
+        # Bloque 1: (B, 1, 65, 41) → (B, 32, 33, 21)
+        self.block1 = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),  # MaxPool 3×3 (paper)
+            nn.Dropout2d(p=p_drop_conv),
+        )
+
+        # Bloque 2: (B, 32, 33, 21) → (B, 64, 17, 11)
+        self.block2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),  # MaxPool 3×3 (paper)
+            nn.Dropout2d(p=p_drop_conv),
+        )
+
+        # Calcular dimensión de features
+        # Input: 65×41
+        # Después MaxPool1(3×3, s=2, p=1): 33×21
+        # Después MaxPool2(3×3, s=2, p=1): 17×11
+        self.feature_dim = 64 * 17 * 11
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Args:
+            x: Input tensor (B, 1, 65, 41)
+
+        Returns:
+            Feature maps (B, 64, H', W')
+        """
+        x = self.block1(x)
+        x = self.block2(x)
+        return x
+
+
+class ClassifierHead(nn.Module):
+    """
+    Cabeza de clasificación fully-connected.
+
+    Arquitectura:
+        Linear(feature_dim, hidden_dim) → ReLU → Dropout → Linear(n_classes)
+    """
+
+    def __init__(
+        self,
+        feature_dim: int,
+        hidden_dim: int,
+        n_classes: int,
+        p_drop_fc: float = 0.5,
+    ):
+        """
+        Args:
+            feature_dim: Dimensión de entrada (features aplanadas)
+            hidden_dim: Dimensión de capa oculta
+            n_classes: Número de clases de salida
+            p_drop_fc: Probabilidad de dropout
+        """
+        super().__init__()
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=p_drop_fc),
+            nn.Linear(hidden_dim, n_classes),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Args:
+            x: Feature maps (B, C, H, W)
+
+        Returns:
+            Logits (B, n_classes)
+        """
+        return self.classifier(x)
+
+
+class CNN2D_DA(nn.Module):
+    """
+    CNN 2D con Domain Adaptation para clasificación de Parkinson.
+
+    Arquitectura dual-head con Gradient Reversal Layer (GRL):
+        - Feature Extractor (compartido)
+        - PD Head: Clasifica Parkinson vs Healthy (2 clases)
+        - Domain Head: Clasifica dominio con GRL (n_domains clases)
+
+    Reference:
+        Ibarra et al. (2023) "Towards a Corpus (and Language)-Independent
+        Screening of Parkinson's Disease from Voice and Speech through
+        Domain Adaptation"
+
+    Input shape: (B, 1, 65, 41)
+    Output: (logits_pd, logits_domain)
+    """
+
+    def __init__(
+        self,
+        n_domains: int = 26,
+        p_drop_conv: float = 0.3,
+        p_drop_fc: float = 0.5,
+    ):
+        """
+        Args:
+            n_domains: Número de dominios (típicamente 26 = 13 archivos × 2 clases)
+            p_drop_conv: Dropout en capas convolucionales
+            p_drop_fc: Dropout en capas fully connected
+        """
+        super().__init__()
+
+        self.n_domains = n_domains
+        self.p_drop_conv = p_drop_conv
+        self.p_drop_fc = p_drop_fc
+
+        # Extractor de características compartido
+        self.feature_extractor = FeatureExtractor(p_drop_conv=p_drop_conv)
+        feature_dim = self.feature_extractor.feature_dim
+
+        # Cabeza PD (tarea principal)
+        self.pd_head = ClassifierHead(
+            feature_dim=feature_dim,
+            hidden_dim=64,
+            n_classes=2,  # Binario: HC vs PD
+            p_drop_fc=p_drop_fc,
+        )
+
+        # Gradient Reversal Layer
+        self.grl = GradientReversalLayer(lambda_=1.0)
+
+        # Cabeza de dominio (tarea auxiliar)
+        self.domain_head = ClassifierHead(
+            feature_dim=feature_dim,
+            hidden_dim=64,
+            n_classes=n_domains,
+            p_drop_fc=p_drop_fc,
+        )
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass con dual-head.
+
+        Args:
+            x: Input tensor (B, 1, 65, 41)
+
+        Returns:
+            logits_pd: Logits para clasificación PD (B, 2)
+            logits_domain: Logits para clasificación de dominio (B, n_domains)
+        """
+        # Extracción de características
+        features = self.feature_extractor(x)
+
+        # Cabeza PD (sin GRL)
+        logits_pd = self.pd_head(features)
+
+        # Cabeza de dominio (con GRL)
+        features_reversed = self.grl(features)
+        logits_domain = self.domain_head(features_reversed)
+
+        return logits_pd, logits_domain
+
+    def set_lambda(self, lambda_: float):
+        """
+        Actualiza el factor lambda de la GRL.
+
+        Args:
+            lambda_: Nuevo valor de lambda (0 a 1)
+        """
+        self.grl.set_lambda(lambda_)
+
+
+def get_last_conv_layer_da(model: CNN2D_DA) -> nn.Module:
+    """
+    Obtiene la última capa convolucional del modelo DA.
+
+    Args:
+        model: Modelo CNN2D_DA
+
+    Returns:
+        Última capa Conv2d del feature extractor
+    """
+    # La última conv está en block2 del feature extractor
+    for module in model.feature_extractor.block2:
+        if isinstance(module, nn.Conv2d):
+            return module
+
+    # Fallback: buscar en block1
+    for module in model.feature_extractor.block1:
+        if isinstance(module, nn.Conv2d):
+            last_conv = module
+
+    return last_conv
+
+
+# ============================================================
+# PRUEBA RÁPIDA
+# ============================================================
+
+
 if __name__ == "__main__":
-    # Crear modelo
+    print("=" * 70)
+    print("TEST 1: CNN2D BASELINE")
+    print("=" * 70)
+
+    # Crear modelo baseline
     model = CNN2D(n_classes=2, p_drop_conv=0.3, p_drop_fc=0.5)
     print_model_summary(model)
 
@@ -363,3 +654,31 @@ if __name__ == "__main__":
     cam = gradcam.generate_cam(x)
     print(f"CAM shape: {cam.shape}")
     print(f"CAM range: [{cam.min():.3f}, {cam.max():.3f}]")
+
+    print("\n" + "=" * 70)
+    print("TEST 2: CNN2D_DA (DOMAIN ADAPTATION)")
+    print("=" * 70)
+
+    # Crear modelo DA
+    model_da = CNN2D_DA(n_domains=26, p_drop_conv=0.3, p_drop_fc=0.5)
+    print_model_summary(model_da)
+
+    # Test forward pass
+    logits_pd, logits_domain = model_da(x)
+    print(f"\nInput shape: {x.shape}")
+    print(f"Output PD shape: {logits_pd.shape} (2 clases: HC/PD)")
+    print(f"Output Domain shape: {logits_domain.shape} (26 dominios)")
+
+    # Test lambda scheduling
+    print("\n" + "=" * 60)
+    print("TEST GRADIENT REVERSAL LAYER")
+    print("=" * 60)
+    print(f"Lambda inicial: {model_da.grl.lambda_}")
+    model_da.set_lambda(0.5)
+    print(f"Lambda actualizado: {model_da.grl.lambda_}")
+
+    # Test forward con nuevo lambda
+    logits_pd2, logits_domain2 = model_da(x)
+    print("Forward pass con lambda=0.5 OK")
+
+    print("\n✅ Todos los tests pasaron correctamente")
