@@ -13,39 +13,26 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class MCDropout(nn.Module):
-    """Dropout activo en modo eval (para MC Dropout)."""
-
-    def __init__(self, p=0.5):
-        super().__init__()
-        self.p = p
+class MCDropout2d(nn.Dropout2d):
+    """Dropout2d activo en eval (para MC Dropout)."""
 
     def forward(self, x):
-        return F.dropout(x, p=self.p, training=True)
+        return F.dropout2d(x, self.p, training=True)
 
 
-class MCDropout2d(nn.Module):
-    """Dropout2d activo en modo eval (para MC Dropout)."""
-
-    def __init__(self, p=0.5):
-        super().__init__()
-        self.p = p
+class MCDropout(nn.Dropout):
+    """Dropout activo en eval (para MC Dropout)."""
 
     def forward(self, x):
-        return F.dropout2d(x, p=self.p, training=True)
+        return F.dropout(x, self.p, training=True)
 
 
 class UncertaintyCNN(nn.Module):
     """
     CNN con dos cabezas para estimación de incertidumbre.
-
-    Args:
-        n_classes: Número de clases
-        p_drop_conv: Probabilidad de dropout en capas convolucionales
-        p_drop_fc: Probabilidad de dropout en capas fully connected
-        input_shape: Tupla (H, W) del tamaño de entrada
-        s_min: Valor mínimo para clamp de s_logit
-        s_max: Valor máximo para clamp de s_logit
+    Backbone: 2× [Conv2d -> BN -> ReLU -> MaxPool(3,2,1) -> MCDropout]
+    Cabeza A: fc_logits (predicción)
+    Cabeza B: fc_slog (incertidumbre aleatoria, log σ² por clase)
     """
 
     def __init__(
@@ -58,151 +45,132 @@ class UncertaintyCNN(nn.Module):
         s_max=3.0,
     ):
         super().__init__()
-
-        self.n_classes = n_classes
         self.s_min = s_min
         self.s_max = s_max
 
-        # Feature extractor (backbone)
-        self.features = nn.Sequential(
-            # Bloque 1
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+        # Backbone: 2 bloques Conv
+        self.block1 = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1),
             nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-            MCDropout2d(p=p_drop_conv),
-            # Bloque 2
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(3, stride=2, padding=1),
+            MCDropout2d(p_drop_conv),
+        )
+        self.block2 = nn.Sequential(
+            nn.Conv2d(32, 64, 3, padding=1),
             nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-            MCDropout2d(p=p_drop_conv),
-            # Global pooling
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
+            nn.ReLU(),
+            nn.MaxPool2d(3, stride=2, padding=1),
+            MCDropout2d(p_drop_conv),
         )
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.drop_fc = MCDropout(p_drop_fc)
 
-        # Calcular el tamaño del feature vector
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, 1, *input_shape)
-            feat_size = self.features(dummy_input).shape[1]
-
-        # Cabeza A: Predicción (logits)
-        self.head_logits = nn.Sequential(
-            nn.Linear(feat_size, 64),
-            nn.ReLU(inplace=True),
-            MCDropout(p=p_drop_fc),
-            nn.Linear(64, n_classes),
-        )
-
-        # Cabeza B: Ruido de datos (s_logit para σ²)
-        self.head_noise = nn.Sequential(
-            nn.Linear(feat_size, 64),
-            nn.ReLU(inplace=True),
-            MCDropout(p=p_drop_fc),
-            nn.Linear(64, n_classes),
-        )
+        # Cabezas A y B
+        self.fc_logits = nn.Linear(64, n_classes)
+        self.fc_slog = nn.Linear(64, n_classes)
 
     def forward(self, x):
-        """
-        Forward pass.
-
-        Args:
-            x: Input tensor [B, 1, H, W]
-
-        Returns:
-            logits: Logits de predicción [B, C]
-            s_logit: Log-varianza (clampeada) [B, C]
-        """
-        # Extract features
-        features = self.features(x)
-
-        # Cabeza A: logits
-        logits = self.head_logits(features)
-
-        # Cabeza B: s_logit (log-varianza)
-        s_logit = self.head_noise(features)
-        s_logit = torch.clamp(s_logit, min=self.s_min, max=self.s_max)
-
+        """Forward pass retorna logits y s_logit."""
+        h = self.block2(self.block1(x))
+        h = self.gap(h).flatten(1)
+        h = self.drop_fc(h)
+        logits = self.fc_logits(h)
+        s_logit = torch.clamp(self.fc_slog(h), self.s_min, self.s_max)
         return logits, s_logit
 
     def predict_with_uncertainty(self, x, n_samples=30):
         """
-        Predicción con estimación de incertidumbre usando MC Dropout.
+        Predicción con incertidumbre usando MC Dropout + ruido gaussiano.
+
+        Implementa decomposición de Kendall & Gal (2017):
+        - H_total = H[p̄]
+        - Aleatoric = E_t[H[p_t]]  (con ruido gaussiano en logits)
+        - Epistemic = H_total - Aleatoric  (BALD)
 
         Args:
             x: Input tensor [B, 1, H, W]
-            n_samples: Número de pasadas MC
+            n_samples: Número de pasadas MC (T_test)
 
         Returns:
-            dict con:
-                - pred: Predicción final [B]
-                - probs_mean: Probabilidades promedio [B, C]
-                - entropy_total: Entropía predictiva [B]
-                - epistemic: Incertidumbre epistémica (BALD) [B]
-                - aleatoric: Incertidumbre aleatoria promedio [B]
+            dict con pred, probs_mean, confidence, entropy_total,
+                     epistemic, aleatoric, sigma2_mean
         """
-        self.eval()  # Pero MCDropout sigue activo
+        self.eval()  # MCDropout sigue activo
+        eps = 1e-12
 
         all_probs = []
-        all_sigma2 = []
+        all_entropies = []
+        all_sigma2_mean = []
 
         with torch.no_grad():
             for _ in range(n_samples):
-                logits, s_logit = self(x)
-                probs = F.softmax(logits, dim=1)
-                sigma2 = torch.exp(s_logit)
+                logits, s_logit = self(x)  # [B, C]
 
-                all_probs.append(probs)
-                all_sigma2.append(sigma2)
+                # Inyectar ruido gaussiano en logits (aleatoric)
+                sigma = torch.exp(0.5 * s_logit)  # σ = exp(0.5 * log σ²)
+                eps_noise = torch.randn_like(logits)
+                logits_t = logits + sigma * eps_noise  # x̂_t = logits + σ⊙ε
 
-        # Stack: [n_samples, B, C]
-        all_probs = torch.stack(all_probs)
-        all_sigma2 = torch.stack(all_sigma2)
+                # Probabilidades con ruido
+                probs_t = F.softmax(logits_t, dim=1)  # [B, C]
+
+                # Entropía condicional H[p_t]
+                H_t = -(probs_t * torch.log(probs_t + eps)).sum(dim=1)  # [B]
+
+                all_probs.append(probs_t)
+                all_entropies.append(H_t)
+
+                # Estadística auxiliar: σ² promedio
+                all_sigma2_mean.append(torch.exp(s_logit).mean(dim=1))  # [B]
+
+        # Stack: [n_samples, B, *]
+        all_probs = torch.stack(all_probs)  # [T, B, C]
+        all_entropies = torch.stack(all_entropies)  # [T, B]
+        all_sigma2_mean = torch.stack(all_sigma2_mean)  # [T, B]
 
         # Probabilidades promedio
-        probs_mean = all_probs.mean(dim=0)  # [B, C]
+        p_mean = all_probs.mean(dim=0)  # [B, C]
 
         # Predicción final
-        pred = probs_mean.argmax(dim=1)  # [B]
+        pred = p_mean.argmax(dim=1)  # [B]
+        confidence = p_mean.max(dim=1)[0]  # [B]
 
-        # Entropía total (predictiva)
-        eps = 1e-12
-        entropy_total = -(probs_mean * torch.log(probs_mean + eps)).sum(dim=1)  # [B]
+        # Decomposición de Kendall & Gal
+        H_total = -(p_mean * torch.log(p_mean + eps)).sum(dim=1)  # H[p̄]
+        H_cond = all_entropies.mean(dim=0)  # E_t[H[p_t]] = ALEATORIC
+        epistemic = H_total - H_cond  # BALD = EPISTEMIC
 
-        # Entropía de cada muestra MC
-        entropy_samples = -(all_probs * torch.log(all_probs + eps)).sum(
-            dim=2
-        )  # [n_samples, B]
-
-        # BALD (epistémica pura)
-        epistemic = entropy_total - entropy_samples.mean(dim=0)  # [B]
-
-        # Aleatoria (promedio de σ² agregado por muestra)
-        aleatoric = all_sigma2.mean(dim=(0, 2))  # [B]
+        # Estadística auxiliar (para monitoreo de σ²)
+        sigma2_mean = all_sigma2_mean.mean(dim=0)  # [B]
 
         return {
             "pred": pred,
-            "probs_mean": probs_mean,
-            "confidence": probs_mean.max(dim=1)[0],
-            "entropy_total": entropy_total,
-            "epistemic": epistemic,
-            "aleatoric": aleatoric,
+            "probs_mean": p_mean,
+            "confidence": confidence,
+            "entropy_total": H_total,
+            "epistemic": epistemic,  # I[y,w|x,D]
+            "aleatoric": H_cond,  # E_w[H[y|x,w]] ← CORREGIDO
+            "sigma2_mean": sigma2_mean,  # Auxiliar: mean σ²
         }
 
 
-def print_uncertainty_model_summary(model):
-    """Imprime resumen del modelo con incertidumbre."""
-    print("\n" + "=" * 60)
-    print("RESUMEN DEL MODELO CON INCERTIDUMBRE")
-    print("=" * 60)
-    print(model)
-    print("\n" + "-" * 60)
+def print_uncertainty_model_summary(model, sample_input_shape=(2, 1, 65, 41)):
+    """
+    Imprime resumen compacto del modelo con incertidumbre.
 
-    # Contar parámetros
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    Args:
+        model: Modelo UncertaintyCNN
+        sample_input_shape: Shape de ejemplo (B, C, H, W)
+    """
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"\n🧩 Parámetros entrenables: {n_params / 1e6:.3f} M ({n_params:,})")
 
-    print(f"Parámetros totales: {total_params:,}")
-    print(f"Parámetros entrenables: {trainable_params:,}")
-    print("-" * 60 + "\n")
+    # Test forward
+    device = next(model.parameters()).device
+    x = torch.randn(*sample_input_shape).to(device)
+    with torch.no_grad():
+        logits, s_logit = model(x)
+    print(
+        f"✅ Shapes → logits: {tuple(logits.shape)} | s_logit: {tuple(s_logit.shape)}\n"
+    )
