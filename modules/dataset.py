@@ -353,3 +353,104 @@ def build_full_pipeline(
         "metadata": metas,
         "summary": dist,
     }
+
+
+# ============================================================
+# PATIENT-LEVEL UTILITIES (para CNN1D)
+# ============================================================
+
+
+def group_by_patient(metadata: List[SampleMeta]) -> Dict[str, List[int]]:
+    """
+    Agrupa índices de samples por patient_id.
+
+    Útil para agregación patient-level en evaluación.
+
+    Args:
+        metadata: Lista de SampleMeta
+
+    Returns:
+        Dict {patient_id: [sample_indices]}
+    """
+    from collections import defaultdict
+
+    patient_map = defaultdict(list)
+    for idx, meta in enumerate(metadata):
+        patient_map[meta.subject_id].append(idx)
+
+    return dict(patient_map)
+
+
+def speaker_independent_split(
+    metadata: List[SampleMeta],
+    test_size: float = 0.15,
+    val_size: float = 0.176,
+    random_state: int = 42,
+) -> Tuple[List[int], List[int], List[int]]:
+    """
+    Split estratificado speaker-independent.
+
+    Asegura que ningún speaker aparezca en múltiples splits.
+    Crítico para evitar data leakage en evaluación.
+
+    Args:
+        metadata: Lista de SampleMeta
+        test_size: Fracción de pacientes para test
+        val_size: Fracción de train_val para validation
+        random_state: Seed para reproducibilidad
+
+    Returns:
+        train_idx: Índices de samples para train
+        val_idx: Índices de samples para val
+        test_idx: Índices de samples para test
+    """
+    from sklearn.model_selection import train_test_split
+
+    # Obtener unique patient_ids con sus labels
+    patient_labels = {}
+    for meta in metadata:
+        if meta.subject_id not in patient_labels:
+            # Determinar label: 1 si 'pk' en condition, 0 si 'healthy'
+            label = 1 if "pk" in meta.condition.lower() else 0
+            patient_labels[meta.subject_id] = label
+
+    patients = list(patient_labels.keys())
+    labels = [patient_labels[p] for p in patients]
+
+    # Split 1: separar test patients
+    train_val_patients, test_patients = train_test_split(
+        patients, test_size=test_size, stratify=labels, random_state=random_state
+    )
+
+    # Split 2: separar train/val patients
+    train_val_labels = [patient_labels[p] for p in train_val_patients]
+    train_patients, val_patients = train_test_split(
+        train_val_patients,
+        test_size=val_size,
+        stratify=train_val_labels,
+        random_state=random_state,
+    )
+
+    # Convertir patient lists a sample indices
+    train_idx = []
+    val_idx = []
+    test_idx = []
+
+    for idx, meta in enumerate(metadata):
+        if meta.subject_id in train_patients:
+            train_idx.append(idx)
+        elif meta.subject_id in val_patients:
+            val_idx.append(idx)
+        elif meta.subject_id in test_patients:
+            test_idx.append(idx)
+
+    print("\n" + "=" * 70)
+    print("SPEAKER-INDEPENDENT SPLIT")
+    print("=" * 70)
+    print(f"Pacientes únicos: {len(patients)}")
+    print(f"  - Train: {len(train_patients)} pacientes → {len(train_idx)} samples")
+    print(f"  - Val:   {len(val_patients)} pacientes → {len(val_idx)} samples")
+    print(f"  - Test:  {len(test_patients)} pacientes → {len(test_idx)} samples")
+    print("=" * 70 + "\n")
+
+    return train_idx, val_idx, test_idx
