@@ -736,6 +736,7 @@ def train_model_da(
     n_epochs: int = 100,
     alpha: float = 1.0,
     lambda_scheduler: Optional[callable] = None,
+    lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
     early_stopping_patience: int = 15,
     save_dir: Optional[Path] = None,
     verbose: bool = True,
@@ -747,14 +748,15 @@ def train_model_da(
         model: Modelo PyTorch con DA
         train_loader: DataLoader de entrenamiento
         val_loader: DataLoader de validación
-        optimizer: Optimizador
+        optimizer: Optimizador (SGD recomendado según Ibarra 2023)
         criterion_pd: Función de pérdida para tarea PD
         criterion_domain: Función de pérdida para tarea de dominio
         device: Device para cómputo
         n_epochs: Número máximo de épocas
         alpha: Peso de la pérdida de dominio
         lambda_scheduler: Función para calcular lambda(epoch) -> float
-                         Si None, usa lambda=1.0 constante
+                         Si None, usa lambda=1.0 constante (Ibarra 2023)
+        lr_scheduler: Learning rate scheduler (StepLR recomendado)
         early_stopping_patience: Paciencia para early stopping
         save_dir: Directorio para guardar checkpoints
         verbose: Si True, imprime progreso
@@ -874,6 +876,10 @@ def train_model_da(
                 f"{epoch_time:.1f}s"
             )
 
+        # Learning rate scheduler step
+        if lr_scheduler is not None:
+            lr_scheduler.step()
+
         # Early stopping
         if early_stopping(val_metrics["loss_pd"], epoch):
             if verbose:
@@ -985,4 +991,258 @@ def evaluate_by_patient_da(
         "accuracy": report["accuracy"],
         "f1_macro": report["macro avg"]["f1-score"],
         "n_patients": len(patient_predictions),
+    }
+
+
+# ============================================================
+# 10-FOLD CROSS-VALIDATION TRAINING
+# ============================================================
+
+
+def train_model_da_kfold(
+    model_class: type,
+    model_params: Dict,
+    dataset,
+    metadata_list: List[dict],
+    device: torch.device,
+    n_folds: int = 10,
+    batch_size: int = 32,
+    n_epochs: int = 100,
+    lr: float = 0.1,
+    alpha: float = 1.0,
+    lambda_constant: float = 1.0,
+    early_stopping_patience: int = 15,
+    save_dir: Optional[Path] = None,
+    seed: int = 42,
+    verbose: bool = True,
+) -> Dict:
+    """
+    Entrenamiento con 10-fold cross-validation según Ibarra (2023).
+
+    Implementa:
+    - 10-fold CV estratificada independiente por hablante
+    - SGD con LR inicial 0.1 y scheduler StepLR
+    - Cross-entropy ponderada automática para PD y dominio
+    - Lambda constante para GRL (default: 1.0)
+
+    Args:
+        model_class: Clase del modelo (ej: CNN2D_DA)
+        model_params: Parámetros para inicializar el modelo
+        dataset: Dataset completo (Combined HC + PD)
+        metadata_list: Lista de metadatos con 'subject_id' y 'label'
+        device: Device para cómputo
+        n_folds: Número de folds (default: 10)
+        batch_size: Tamaño de batch (paper: probar 16/32/64)
+        n_epochs: Épocas máximas por fold
+        lr: Learning rate inicial (default: 0.1 según paper)
+        alpha: Peso de pérdida de dominio
+        lambda_constant: Valor constante de lambda para GRL (default: 1.0)
+        early_stopping_patience: Paciencia para early stopping
+        save_dir: Directorio para guardar resultados
+        seed: Semilla para reproducibilidad
+        verbose: Si True, imprime progreso
+
+    Returns:
+        Dict con métricas agregadas de todos los folds
+    """
+    from torch.utils.data import DataLoader, Subset
+    from modules.cnn_utils import (
+        create_10fold_splits_by_speaker,
+        compute_class_weights_auto,
+    )
+
+    if save_dir is not None:
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+    # Crear splits de 10-fold
+    print("\n" + "=" * 70)
+    print("PREPARANDO 10-FOLD CV ESTRATIFICADA POR HABLANTE")
+    print("=" * 70)
+
+    fold_splits = create_10fold_splits_by_speaker(
+        metadata_list, n_folds=n_folds, seed=seed
+    )
+
+    # Almacenar resultados de cada fold
+    all_fold_results = []
+    fold_histories = []
+
+    # Entrenar cada fold
+    for fold_idx, split_indices in enumerate(fold_splits):
+        print("\n" + "=" * 70)
+        print(f"FOLD {fold_idx + 1}/{n_folds}")
+        print("=" * 70)
+
+        # Crear subsets
+        train_subset = Subset(dataset, split_indices["train"])
+        val_subset = Subset(dataset, split_indices["val"])
+
+        # Crear DataLoaders
+        train_loader = DataLoader(
+            train_subset, batch_size=batch_size, shuffle=True, num_workers=0
+        )
+        val_loader = DataLoader(
+            val_subset, batch_size=batch_size, shuffle=False, num_workers=0
+        )
+
+        print(f"   Train: {len(train_subset)} muestras ({len(train_loader)} batches)")
+        print(f"   Val:   {len(val_subset)} muestras ({len(val_loader)} batches)")
+
+        # Extraer labels de train para calcular pesos
+        train_labels_pd = []
+        train_labels_domain = []
+
+        for idx in split_indices["train"]:
+            sample = dataset[idx]
+            if len(sample) == 3:
+                _, label_pd, label_domain = sample
+            else:
+                label_pd = sample[1]
+                label_domain = torch.tensor(0)  # Default
+
+            train_labels_pd.append(
+                label_pd.item() if isinstance(label_pd, torch.Tensor) else label_pd
+            )
+            train_labels_domain.append(
+                label_domain.item()
+                if isinstance(label_domain, torch.Tensor)
+                else label_domain
+            )
+
+        train_labels_pd = torch.tensor(train_labels_pd, dtype=torch.long)
+        train_labels_domain = torch.tensor(train_labels_domain, dtype=torch.long)
+
+        # Calcular pesos automáticos
+        print("\n   📊 Calculando class weights automáticos:")
+        print("      PD (tarea principal):")
+        pd_weights = compute_class_weights_auto(train_labels_pd, threshold=0.4)
+
+        print("      Dominio (tarea auxiliar):")
+        domain_weights = compute_class_weights_auto(train_labels_domain, threshold=0.4)
+
+        # Crear criterios
+        if pd_weights is not None:
+            criterion_pd = nn.CrossEntropyLoss(weight=pd_weights.to(device))
+        else:
+            criterion_pd = nn.CrossEntropyLoss()
+
+        if domain_weights is not None:
+            criterion_domain = nn.CrossEntropyLoss(weight=domain_weights.to(device))
+        else:
+            criterion_domain = nn.CrossEntropyLoss()
+
+        # Crear modelo nuevo para este fold
+        model = model_class(**model_params).to(device)
+
+        # Crear optimizador SGD con LR 0.1 (Ibarra 2023)
+        optimizer = torch.optim.SGD(
+            model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4
+        )
+
+        # Crear scheduler StepLR
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=30, gamma=0.1
+        )
+
+        print(f"\n   ⚙️  Configuración:")
+        print(f"      Optimizer: SGD (lr={lr}, momentum=0.9, wd=1e-4)")
+        print(f"      LR Scheduler: StepLR (step=30, gamma=0.1)")
+        print(f"      Lambda GRL: {lambda_constant} (constante)")
+        print(f"      Alpha (dominio): {alpha}")
+
+        # Lambda scheduler constante
+        def lambda_scheduler(epoch):
+            return lambda_constant
+
+        # Guardar en subdirectorio del fold
+        fold_save_dir = save_dir / f"fold_{fold_idx + 1}" if save_dir else None
+
+        # Entrenar
+        fold_results = train_model_da(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            optimizer=optimizer,
+            criterion_pd=criterion_pd,
+            criterion_domain=criterion_domain,
+            device=device,
+            n_epochs=n_epochs,
+            alpha=alpha,
+            lambda_scheduler=lambda_scheduler,
+            lr_scheduler=lr_scheduler,
+            early_stopping_patience=early_stopping_patience,
+            save_dir=fold_save_dir,
+            verbose=verbose,
+        )
+
+        # Guardar resultados del fold
+        all_fold_results.append(
+            {
+                "fold": fold_idx + 1,
+                "best_val_loss_pd": fold_results["best_val_loss_pd"],
+                "total_time": fold_results["total_time"],
+                "n_epochs_trained": len(fold_results["history"]["train_loss_pd"]),
+            }
+        )
+
+        fold_histories.append(fold_results["history"])
+
+        print(f"\n   ✅ Fold {fold_idx + 1} completado:")
+        print(f"      Best val_loss_pd: {fold_results['best_val_loss_pd']:.4f}")
+        print(f"      Tiempo: {fold_results['total_time'] / 60:.1f} min")
+
+    # Calcular estadísticas agregadas
+    print("\n" + "=" * 70)
+    print("RESUMEN 10-FOLD CROSS-VALIDATION")
+    print("=" * 70)
+
+    val_losses = [fold["best_val_loss_pd"] for fold in all_fold_results]
+    mean_loss = np.mean(val_losses)
+    std_loss = np.std(val_losses)
+
+    print(f"\n📊 Métricas agregadas (10 folds):")
+    print(f"   Val Loss PD: {mean_loss:.4f} ± {std_loss:.4f}")
+    print(f"\n   Por fold:")
+    for fold in all_fold_results:
+        print(
+            f"      Fold {fold['fold']}: {fold['best_val_loss_pd']:.4f} "
+            f"({fold['n_epochs_trained']} épocas)"
+        )
+
+    total_time = sum(fold["total_time"] for fold in all_fold_results)
+    print(f"\n   Tiempo total: {total_time / 60:.1f} min")
+
+    # Guardar resultados agregados
+    if save_dir is not None:
+        results_path = save_dir / "kfold_results.json"
+        with open(results_path, "w") as f:
+            json.dump(
+                {
+                    "n_folds": n_folds,
+                    "mean_val_loss_pd": float(mean_loss),
+                    "std_val_loss_pd": float(std_loss),
+                    "all_folds": all_fold_results,
+                    "config": {
+                        "batch_size": batch_size,
+                        "lr_initial": lr,
+                        "alpha": alpha,
+                        "lambda": lambda_constant,
+                        "n_epochs": n_epochs,
+                        "early_stopping_patience": early_stopping_patience,
+                    },
+                },
+                f,
+                indent=2,
+            )
+        print(f"\n💾 Resultados guardados: {results_path}")
+
+    print("=" * 70 + "\n")
+
+    return {
+        "fold_results": all_fold_results,
+        "fold_histories": fold_histories,
+        "mean_val_loss_pd": mean_loss,
+        "std_val_loss_pd": std_loss,
+        "total_time": total_time,
     }

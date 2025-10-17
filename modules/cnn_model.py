@@ -30,29 +30,35 @@ class CNN2D(nn.Module):
     """
 
     def __init__(
-        self, n_classes: int = 2, p_drop_conv: float = 0.3, p_drop_fc: float = 0.5
+        self,
+        n_classes: int = 2,
+        p_drop_conv: float = 0.3,
+        p_drop_fc: float = 0.5,
+        input_shape: Tuple[int, int] = (65, 41),
     ):
         """
         Args:
             n_classes: Número de clases (2 para binario)
             p_drop_conv: Dropout en capas convolucionales
             p_drop_fc: Dropout en capas fully connected
+            input_shape: Dimensiones de entrada (H, W)
         """
         super().__init__()
 
         self.n_classes = n_classes
         self.p_drop_conv = p_drop_conv
         self.p_drop_fc = p_drop_fc
+        self.input_shape = input_shape
 
         # Feature extractor
         self.features = nn.Sequential(
-            # Bloque 1: (B, 1, 65, 41) → (B, 32, 32, 20)
+            # Bloque 1: (B, 1, H, W) → (B, 32, H//2, W//2)
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Dropout2d(p=p_drop_conv),
-            # Bloque 2: (B, 32, 32, 20) → (B, 64, 16, 10)
+            # Bloque 2: (B, 32, H//2, W//2) → (B, 64, H//4, W//4)
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
@@ -60,9 +66,8 @@ class CNN2D(nn.Module):
             nn.Dropout2d(p=p_drop_conv),
         )
 
-        # Calcular tamaño después de convoluciones
-        # Input: 65×41 → después de 2 maxpools(2×2): 16×10
-        self.feature_dim = 64 * 16 * 10
+        # Calcular tamaño después de convoluciones dinámicamente
+        self.feature_dim = self._calculate_feature_dim(input_shape)
 
         # Classifier head
         self.classifier = nn.Sequential(
@@ -72,6 +77,23 @@ class CNN2D(nn.Module):
             nn.Dropout(p=p_drop_fc),
             nn.Linear(64, n_classes),
         )
+
+    def _calculate_feature_dim(self, input_shape: Tuple[int, int]) -> int:
+        """
+        Calcula la dimensión de features después de capas convolucionales.
+
+        Args:
+            input_shape: Dimensiones de entrada (H, W)
+
+        Returns:
+            Dimensión aplanada de las features
+        """
+        # Crear tensor dummy y pasarlo por capas convolucionales
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, 1, *input_shape)
+            dummy_output = self.features(dummy_input)
+            # Retornar tamaño aplanado (C * H * W)
+            return dummy_output.numel()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -201,7 +223,10 @@ class GradCAM:
         self.target_layer.register_full_backward_hook(self._save_gradient)
 
     def _save_activation(
-        self, module: nn.Module, input: Tuple[torch.Tensor], output: torch.Tensor
+        self,
+        module: nn.Module,
+        input: Tuple[torch.Tensor],
+        output: torch.Tensor,
     ):
         """Hook para guardar activaciones."""
         self.activations = output.detach()
@@ -255,7 +280,7 @@ class GradCAM:
         weights = self.gradients.mean(dim=[2, 3], keepdim=True)  # (B, C, 1, 1)
 
         # Weighted combination
-        cam = (weights * self.activations).sum(dim=1, keepdim=True)  # (B, 1, H, W)
+        cam = (weights * self.activations).sum(dim=1, keepdim=True)
 
         # ReLU (solo activaciones positivas)
         cam = F.relu(cam)
@@ -344,7 +369,8 @@ class GradientReversalFunction(torch.autograd.Function):
     Durante backward: invierte el gradiente y lo multiplica por lambda
 
     Reference:
-        Ganin & Lempitsky (2015) "Unsupervised Domain Adaptation by Backpropagation"
+        Ganin & Lempitsky (2015)
+        "Unsupervised Domain Adaptation by Backpropagation"
     """
 
     @staticmethod
@@ -403,48 +429,69 @@ class FeatureExtractor(nn.Module):
         - Bloque 1: Conv2d(32, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
         - Bloque 2: Conv2d(64, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
 
-    Input shape: (B, 1, 65, 41)
+    Input shape: (B, 1, H, W)
     Output shape: (B, 64, H', W')
     """
 
-    def __init__(self, p_drop_conv: float = 0.3):
+    def __init__(
+        self,
+        p_drop_conv: float = 0.3,
+        input_shape: Tuple[int, int] = (65, 41),
+    ):
         """
         Args:
             p_drop_conv: Probabilidad de dropout en capas convolucionales
+            input_shape: Dimensiones de entrada (H, W)
         """
         super().__init__()
         self.p_drop_conv = p_drop_conv
+        self.input_shape = input_shape
 
-        # Bloque 1: (B, 1, 65, 41) → (B, 32, 33, 21)
+        # Bloque 1: (B, 1, H, W) → (B, 32, H', W')
         self.block1 = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),  # MaxPool 3×3 (paper)
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),  # 3×3 (paper)
             nn.Dropout2d(p=p_drop_conv),
         )
 
-        # Bloque 2: (B, 32, 33, 21) → (B, 64, 17, 11)
+        # Bloque 2: (B, 32, H', W') → (B, 64, H'', W'')
         self.block2 = nn.Sequential(
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),  # MaxPool 3×3 (paper)
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),  # 3×3 (paper)
             nn.Dropout2d(p=p_drop_conv),
         )
 
-        # Calcular dimensión de features
-        # Input: 65×41
-        # Después MaxPool1(3×3, s=2, p=1): 33×21
-        # Después MaxPool2(3×3, s=2, p=1): 17×11
-        self.feature_dim = 64 * 17 * 11
+        # Calcular dimensión de features dinámicamente
+        self.feature_dim = self._calculate_feature_dim(input_shape)
+
+    def _calculate_feature_dim(self, input_shape: Tuple[int, int]) -> int:
+        """
+        Calcula la dimensión de features después de capas convolucionales.
+
+        Args:
+            input_shape: Dimensiones de entrada (H, W)
+
+        Returns:
+            Dimensión aplanada de las features
+        """
+        # Crear tensor dummy y pasarlo por los bloques
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, 1, *input_shape)
+            x = self.block1(dummy_input)
+            x = self.block2(x)
+            # Retornar tamaño aplanado (C * H * W)
+            return x.numel()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
 
         Args:
-            x: Input tensor (B, 1, 65, 41)
+            x: Input tensor (B, 1, H, W)
 
         Returns:
             Feature maps (B, 64, H', W')
@@ -521,21 +568,26 @@ class CNN2D_DA(nn.Module):
         n_domains: int = 26,
         p_drop_conv: float = 0.3,
         p_drop_fc: float = 0.5,
+        input_shape: Tuple[int, int] = (65, 41),
     ):
         """
         Args:
-            n_domains: Número de dominios (típicamente 26 = 13 archivos × 2 clases)
+            n_domains: Número de dominios (26 = 13 archivos × 2 clases)
             p_drop_conv: Dropout en capas convolucionales
             p_drop_fc: Dropout en capas fully connected
+            input_shape: Dimensiones de entrada (H, W)
         """
         super().__init__()
 
         self.n_domains = n_domains
         self.p_drop_conv = p_drop_conv
         self.p_drop_fc = p_drop_fc
+        self.input_shape = input_shape
 
         # Extractor de características compartido
-        self.feature_extractor = FeatureExtractor(p_drop_conv=p_drop_conv)
+        self.feature_extractor = FeatureExtractor(
+            p_drop_conv=p_drop_conv, input_shape=input_shape
+        )
         feature_dim = self.feature_extractor.feature_dim
 
         # Cabeza PD (tarea principal)
@@ -681,4 +733,4 @@ if __name__ == "__main__":
     logits_pd2, logits_domain2 = model_da(x)
     print("Forward pass con lambda=0.5 OK")
 
-    print("\n✅ Todos los tests pasaron correctamente")
+    print("\n[OK] Todos los tests pasaron correctamente")

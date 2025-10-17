@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 import seaborn as sns
-from collections import Counter
 
 
 # ============================================================
@@ -125,6 +124,252 @@ def calculate_class_weights(labels: torch.Tensor) -> torch.Tensor:
     weights = total_samples / (len(class_counts) * class_counts.float())
 
     return weights
+
+
+def compute_class_weights_auto(
+    labels: torch.Tensor, threshold: float = 0.4
+) -> Optional[torch.Tensor]:
+    """
+    Detecta desbalance automáticamente y calcula pesos si es necesario.
+
+    Args:
+        labels: Labels de clase (N,)
+        threshold: Umbral para detectar desbalance (default: 0.4)
+                   Si clase minoritaria < threshold * total, aplicar pesos
+
+    Returns:
+        Tensor de pesos si hay desbalance, None si está balanceado
+    """
+    class_counts = torch.bincount(labels)
+    total_samples = len(labels)
+
+    # Calcular proporción de clase minoritaria
+    min_proportion = class_counts.min().item() / total_samples
+
+    if min_proportion < threshold:
+        # Hay desbalance, calcular pesos
+        weights = calculate_class_weights(labels)
+        print(
+            f"   ⚠️  Desbalance detectado (min class: {min_proportion:.1%}). Aplicando pesos."
+        )
+        return weights
+    else:
+        print(f"   ✓ Dataset balanceado (min class: {min_proportion:.1%}). Sin pesos.")
+        return None
+
+
+# ============================================================
+# SPEAKER-INDEPENDENT SPLITS
+# ============================================================
+
+
+def split_by_speaker(
+    metadata_list: List[dict],
+    train_ratio: float = 0.6,
+    val_ratio: float = 0.15,
+    test_ratio: float = 0.25,
+    seed: int = 42,
+) -> Dict[str, List[int]]:
+    """
+    Split speaker-independent: garantiza que un hablante está solo en un conjunto.
+
+    Args:
+        metadata_list: Lista de metadatos con 'subject_id'
+        train_ratio: Proporción para training
+        val_ratio: Proporción para validation
+        test_ratio: Proporción para test
+        seed: Semilla para reproducibilidad
+
+    Returns:
+        Dict con índices: {'train': [...], 'val': [...], 'test': [...]}
+    """
+    # Agrupar índices por subject_id
+    subject_to_indices = {}
+    for idx, meta in enumerate(metadata_list):
+        subject_id = meta.get("subject_id", meta.get("filename", f"unknown_{idx}"))
+        if subject_id not in subject_to_indices:
+            subject_to_indices[subject_id] = []
+        subject_to_indices[subject_id].append(idx)
+
+    subjects = list(subject_to_indices.keys())
+    np.random.seed(seed)
+    np.random.shuffle(subjects)
+
+    # Split de hablantes
+    n_train = int(len(subjects) * train_ratio)
+    n_val = int(len(subjects) * val_ratio)
+
+    train_subjects = subjects[:n_train]
+    val_subjects = subjects[n_train : n_train + n_val]
+    test_subjects = subjects[n_train + n_val :]
+
+    # Obtener índices de muestras
+    train_indices = [idx for subj in train_subjects for idx in subject_to_indices[subj]]
+    val_indices = [idx for subj in val_subjects for idx in subject_to_indices[subj]]
+    test_indices = [idx for subj in test_subjects for idx in subject_to_indices[subj]]
+
+    print(f"\n📊 Split speaker-independent:")
+    print(f"   Train: {len(train_subjects)} hablantes, {len(train_indices)} muestras")
+    print(f"   Val:   {len(val_subjects)} hablantes, {len(val_indices)} muestras")
+    print(f"   Test:  {len(test_subjects)} hablantes, {len(test_indices)} muestras")
+
+    return {"train": train_indices, "val": val_indices, "test": test_indices}
+
+
+def create_10fold_splits_by_speaker(
+    metadata_list: List[dict], n_folds: int = 10, seed: int = 42
+) -> List[Dict[str, List[int]]]:
+    """
+    Crea 10 folds estratificados independientes por hablante.
+
+    Asegura que:
+    - Todos los segmentos de un hablante están en el mismo fold
+    - Cada fold está estratificado por etiqueta PD (balanceado HC/PD)
+    - Sin fugas de hablante entre train/val
+
+    Args:
+        metadata_list: Lista de metadatos con 'subject_id' y 'label'
+        n_folds: Número de folds (default: 10)
+        seed: Semilla para reproducibilidad
+
+    Returns:
+        Lista de dicts con splits: [{'train': [...], 'val': [...]}, ...]
+    """
+    from sklearn.model_selection import StratifiedKFold
+
+    # Agrupar por subject_id
+    subject_to_indices = {}
+    subject_to_label = {}
+
+    for idx, meta in enumerate(metadata_list):
+        subject_id = meta.get("subject_id", meta.get("filename", f"unknown_{idx}"))
+        label = meta.get("label", 0)
+
+        if subject_id not in subject_to_indices:
+            subject_to_indices[subject_id] = []
+            subject_to_label[subject_id] = label
+
+        subject_to_indices[subject_id].append(idx)
+
+    # Preparar arrays para StratifiedKFold
+    subjects = list(subject_to_indices.keys())
+    labels = [subject_to_label[subj] for subj in subjects]
+
+    subjects = np.array(subjects)
+    labels = np.array(labels)
+
+    # Crear folds estratificados sobre hablantes
+    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+
+    fold_splits = []
+
+    for fold_idx, (train_subject_idx, val_subject_idx) in enumerate(
+        skf.split(subjects, labels)
+    ):
+        train_subjects = subjects[train_subject_idx]
+        val_subjects = subjects[val_subject_idx]
+
+        # Obtener índices de muestras
+        train_indices = [
+            idx for subj in train_subjects for idx in subject_to_indices[subj]
+        ]
+        val_indices = [idx for subj in val_subjects for idx in subject_to_indices[subj]]
+
+        fold_splits.append({"train": train_indices, "val": val_indices})
+
+    print(f"\n📊 10-Fold CV speaker-independent creado:")
+    print(f"   Total hablantes: {len(subjects)}")
+    print(f"   Total muestras: {len(metadata_list)}")
+    print(f"   Folds: {n_folds}")
+
+    # Estadísticas de primer fold
+    fold_1 = fold_splits[0]
+    print(f"\n   Fold 1 (ejemplo):")
+    print(f"      Train: {len(fold_1['train'])} muestras")
+    print(f"      Val:   {len(fold_1['val'])} muestras")
+
+    return fold_splits
+
+
+# ============================================================
+# DATALOADER CREATION
+# ============================================================
+
+
+def create_dataloaders_from_existing(
+    base_dataset,
+    split_indices: Dict[str, List[int]],
+    batch_size: int = 32,
+    spec_augment_params: Optional[Dict] = None,
+    num_workers: int = 0,
+) -> Dict[str, torch.utils.data.DataLoader]:
+    """
+    Crea DataLoaders desde dataset existente con splits.
+
+    Args:
+        base_dataset: Dataset base (ConcatDataset o similar)
+        split_indices: Dict con 'train', 'val', 'test' indices
+        batch_size: Tamaño de batch
+        spec_augment_params: Parámetros para SpecAugment (opcional)
+        num_workers: Workers para DataLoader
+
+    Returns:
+        Dict con DataLoaders: {'train': ..., 'val': ..., 'test': ...}
+    """
+    from torch.utils.data import DataLoader, Subset
+
+    # Crear subsets
+    train_subset = Subset(base_dataset, split_indices["train"])
+    val_subset = Subset(base_dataset, split_indices["val"])
+
+    # Crear loaders
+    loaders = {
+        "train": DataLoader(
+            train_subset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+        ),
+        "val": DataLoader(
+            val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        ),
+    }
+
+    # Test loader si existe
+    if "test" in split_indices:
+        test_subset = Subset(base_dataset, split_indices["test"])
+        loaders["test"] = DataLoader(
+            test_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+
+    print(f"\n✅ DataLoaders creados:")
+    print(f"   Train batches: {len(loaders['train'])}")
+    print(f"   Val batches:   {len(loaders['val'])}")
+    if "test" in loaders:
+        print(f"   Test batches:  {len(loaders['test'])}")
+
+    return loaders
+
+
+def compute_class_weights_from_dataset(dataset, indices: List[int]) -> torch.Tensor:
+    """
+    Calcula pesos de clase desde dataset y índices.
+
+    Args:
+        dataset: Dataset PyTorch
+        indices: Lista de índices a considerar
+
+    Returns:
+        Tensor de pesos de clase
+    """
+    labels = []
+    for idx in indices:
+        sample = dataset[idx]
+        if isinstance(sample, dict):
+            label = sample["label"]
+        else:
+            label = sample[1]  # Asumiendo (X, y) o (X, y, domain)
+        labels.append(label.item() if isinstance(label, torch.Tensor) else label)
+
+    labels_tensor = torch.tensor(labels, dtype=torch.long)
+    return calculate_class_weights(labels_tensor)
 
 
 # ============================================================
