@@ -451,6 +451,25 @@ def speaker_independent_split(
     print(f"  - Train: {len(train_patients)} pacientes → {len(train_idx)} samples")
     print(f"  - Val:   {len(val_patients)} pacientes → {len(val_idx)} samples")
     print(f"  - Test:  {len(test_patients)} pacientes → {len(test_idx)} samples")
+
+    # Warning si muy pocos pacientes
+    if len(test_patients) < 5:
+        print(f"\n⚠️  WARNING: Solo {len(test_patients)} pacientes en test!")
+        print(f"   • Métricas patient-level pueden no ser representativas")
+        print(f"   • Considerar usar más datos o K-fold CV")
+
+    # Verificar que hay ambas clases en cada split
+    for split_name, split_pats in [
+        ("Train", train_patients),
+        ("Val", val_patients),
+        ("Test", test_patients),
+    ]:
+        labels_in_split = [patient_labels[p] for p in split_pats]
+        n_hc = sum(1 for l in labels_in_split if l == 0)
+        n_pd = sum(1 for l in labels_in_split if l == 1)
+        if n_hc == 0 or n_pd == 0:
+            print(f"   ⚠️  {split_name}: Solo tiene una clase! HC={n_hc}, PD={n_pd}")
+
     print("=" * 70 + "\n")
 
     return train_idx, val_idx, test_idx

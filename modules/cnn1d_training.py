@@ -33,9 +33,7 @@ from sklearn.metrics import (
 class EarlyStopping:
     """Early stopping para detener entrenamiento cuando no mejora."""
 
-    def __init__(
-        self, patience: int = 10, min_delta: float = 0.0, mode: str = "min"
-    ):
+    def __init__(self, patience: int = 10, min_delta: float = 0.0, mode: str = "min"):
         self.patience = patience
         self.min_delta = min_delta
         self.mode = mode
@@ -229,9 +227,7 @@ def evaluate_da(
     recall_pd = recall_score(
         all_labels_pd, all_preds_pd, average="binary", zero_division=0
     )
-    f1_pd = f1_score(
-        all_labels_pd, all_preds_pd, average="binary", zero_division=0
-    )
+    f1_pd = f1_score(all_labels_pd, all_preds_pd, average="binary", zero_division=0)
 
     # Métricas Domain
     acc_domain = accuracy_score(all_labels_domain, all_preds_domain)
@@ -289,8 +285,7 @@ def aggregate_patient_predictions(
     patient_probs = {}
     if method == "mean":
         patient_probs = {
-            pid: np.mean(p_list, axis=0)
-            for pid, p_list in patient_probs_dict.items()
+            pid: np.mean(p_list, axis=0) for pid, p_list in patient_probs_dict.items()
         }
     elif method == "log_mean":
         # Log-mean (equivalente a producto de probs)
@@ -427,7 +422,7 @@ def train_model_da(
 
         if verbose:
             print(
-                f"Época {epoch+1:3d}/{n_epochs} | λ={current_lambda:.3f} | "
+                f"Época {epoch + 1:3d}/{n_epochs} | λ={current_lambda:.3f} | "
                 f"Train: L_PD={train_metrics['loss_pd']:.4f} "
                 f"L_Dom={train_metrics['loss_domain']:.4f} | "
                 f"Val: L_PD={val_metrics['loss_pd']:.4f} "
@@ -452,8 +447,8 @@ def train_model_da(
         # Early stopping
         if early_stop(val_metrics["loss_pd"], epoch):
             if verbose:
-                print(f"\n⚠️  Early stopping en época {epoch+1}")
-                print(f"    Mejor época: {early_stop.best_epoch+1}")
+                print(f"\n⚠️  Early stopping en época {epoch + 1}")
+                print(f"    Mejor época: {early_stop.best_epoch + 1}")
                 print(f"    Mejor val_loss_pd: {best_val_loss_pd:.4f}\n")
             break
 
@@ -463,7 +458,7 @@ def train_model_da(
         print("\n" + "=" * 70)
         print("ENTRENAMIENTO COMPLETADO")
         print("=" * 70)
-        print(f"Tiempo total: {total_time/60:.1f} minutos")
+        print(f"Tiempo total: {total_time / 60:.1f} minutos")
         print(f"Mejor val_loss_pd: {best_val_loss_pd:.4f}")
         print("=" * 70 + "\n")
 
@@ -502,6 +497,12 @@ def evaluate_patient_level(
     Returns:
         Dict con métricas patient-level y confusion matrix
     """
+    # Validar dimensiones
+    assert len(all_probs) == len(all_labels) == len(patient_ids), (
+        f"Longitudes no coinciden: probs={len(all_probs)}, "
+        f"labels={len(all_labels)}, patient_ids={len(patient_ids)}"
+    )
+
     # Agregar predicciones por paciente
     patient_probs, patient_preds = aggregate_patient_predictions(
         all_probs, patient_ids, method=method
@@ -521,14 +522,15 @@ def evaluate_patient_level(
 
     # Métricas
     acc = accuracy_score(y_true, y_pred)
-    precision = precision_score(
-        y_true, y_pred, average="binary", zero_division=0
-    )
-    recall = recall_score(
-        y_true, y_pred, average="binary", zero_division=0
-    )
+    precision = precision_score(y_true, y_pred, average="binary", zero_division=0)
+    recall = recall_score(y_true, y_pred, average="binary", zero_division=0)
     f1 = f1_score(y_true, y_pred, average="binary", zero_division=0)
-    cm = confusion_matrix(y_true, y_pred)
+
+    # Confusion matrix con labels explícitos para forzar shape (2,2)
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+
+    # Verificar shape
+    assert cm.shape == (2, 2), f"CM shape incorrecto: {cm.shape}"
 
     return {
         "acc": acc,
