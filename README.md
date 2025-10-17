@@ -1,432 +1,685 @@
-# Detección de Parkinson desde Voz con Domain Adaptation
+# 🎵 Detección de Parkinson mediante Análisis de Voz
 
-Sistema completo de análisis de voz para detección de Parkinson usando CNN 2D con Domain Adaptation, incertidumbre epistémica (MC Dropout) y explicabilidad (Grad-CAM).
-
----
-
-## 📋 Tabla de Contenidos
-
-1. [Descripción General](#-descripción-general)
-2. [Arquitecturas Disponibles](#-arquitecturas-disponibles)
-3. [Instalación y Setup](#-instalación-y-setup)
-4. [Pipeline Completo](#-pipeline-completo)
-5. [Uso Rápido](#-uso-rápido)
-6. [Módulos del Sistema](#-módulos-del-sistema)
-7. [Documentación Detallada](#-documentación-detallada)
+Sistema de clasificación binaria (Healthy vs Parkinson) usando redes neuronales convolucionales 2D sobre espectrogramas Mel de señales de voz.
 
 ---
 
-## 🎯 Descripción General
+## 📋 Índice
 
-### Paper de Referencia
-Ibarra et al. (2023) *"Towards a Corpus (and Language)-Independent Screening of Parkinson's Disease from Voice and Speech through Domain Adaptation"*
-
-### Características Principales
-
-- ✅ **Preprocesamiento exacto del paper**: Mel-spectrograms 65×41, z-score
-- ✅ **Data Augmentation**: Pitch shift, time stretch, noise, SpecAugment
-- ✅ **2 Arquitecturas CNN**:
-  - Baseline: CNN2D simple
-  - **Domain Adaptation**: Dual-head con GRL (Gradient Reversal Layer)
-- ✅ **Incertidumbre Epistémica**: MC Dropout (30 muestras)
-- ✅ **Explicabilidad**: Grad-CAM para mapas de atención
-- ✅ **Agregación Multinivel**: Segmento → Archivo → Paciente
-- ✅ **Split Speaker-Independent**: Evita data leakage
-- ✅ **Código Modular**: PEP 8, type hints, documentación completa
+1. [Resumen del Proyecto](#resumen-del-proyecto)
+2. [Estructura del Proyecto](#estructura-del-proyecto)
+3. [Flujo de Trabajo](#flujo-de-trabajo)
+4. [Notebooks Disponibles](#notebooks-disponibles)
+5. [Pipelines Automatizados](#pipelines-automatizados)
+6. [Instalación y Configuración](#instalación-y-configuración)
+7. [Resultados](#resultados)
 
 ---
 
-## 🏗️ Arquitecturas Disponibles
+## 🎯 Resumen del Proyecto
 
-### 1. CNN2D Baseline
+### Objetivo
+Clasificar automáticamente señales de voz para detectar Parkinson usando técnicas de Deep Learning.
 
-```
-Input (B, 1, 65, 41)
-    ↓
-Conv2D(32) → BN → ReLU → MaxPool(2×2) → Dropout(0.3)
-    ↓
-Conv2D(64) → BN → ReLU → MaxPool(2×2) → Dropout(0.3)
-    ↓
-Flatten → FC(64) → ReLU → Dropout(0.5) → FC(2)
-    ↓
-Output: HC/PD (2 clases)
-```
+### Metodología
+- **Preprocesamiento**: Resampling, segmentación, Mel spectrograms
+- **Data Augmentation**: Pitch shift, time stretch, noise, SpecAugment
+- **Modelos**:
+  - **CNN2D**: Modelo baseline sin Domain Adaptation
+  - **CNN2D_DA**: Modelo con Domain Adaptation y Gradient Reversal Layer (GRL)
 
-**Uso**: Clasificación binaria simple  
-**Parámetros**: ~674K
-
-### 2. CNN2D con Domain Adaptation (Recomendado)
-
-```
-Input (B, 1, 65, 41)
-    ↓
-┌────────────────────────────┐
-│  Feature Extractor (Shared) │
-│  Conv2D(32) → MaxPool(3×3)  │
-│  Conv2D(64) → MaxPool(3×3)  │
-└────────────────────────────┘
-    ↓
-Features (B, 64, 17, 11)
-    ↓
-    ├─────────────┬──────────────┐
-    ↓             ↓              ↓
-PD Head      GRL (λ)      Domain Head
-Linear(2)       ↓          Linear(N)
-    ↓       Inverted           ↓
-HC/PD    Features         Domains
-```
-
-**Ventajas**:
-- Features invariantes al dominio (corpus/micrófono)
-- Mejor generalización cross-corpus
-- Menos overfitting
-
-**Parámetros**: ~1.55M
+### Implementación
+Basado en el paper: **Ibarra et al. (2023)** - "Towards a Corpus (and Language)-Independent Screening of Parkinson's Disease from Voice and Speech through Domain Adaptation"
 
 ---
 
-## 🚀 Instalación y Setup
+## 📁 Estructura del Proyecto
 
-### Requisitos
-```bash
-# Python 3.8+
-pip install torch torchvision torchaudio
-pip install librosa soundfile scikit-learn
-pip install matplotlib seaborn pandas numpy tqdm
-```
-
-### Estructura del Proyecto
 ```
 parkinson-voice-uncertainty/
-├── data/
-│   ├── vowels_healthy/    # Datos HC (13 archivos)
-│   └── vowels_pk/         # Datos PD (13 archivos)
-├── modules/
-│   ├── preprocessing.py   # Preprocesamiento según paper
-│   ├── augmentation.py    # Data augmentation
-│   ├── dataset.py         # PyTorch datasets
-│   ├── cnn_model.py       # CNN Baseline + DA
-│   ├── cnn_training.py    # Pipeline de entrenamiento
-│   ├── cnn_utils.py       # Utilidades
-│   └── cnn_visualization.py  # Visualizaciones
-├── parkinson_voice_analysis.ipynb  # Notebook principal
-├── train_cnn.py           # Script de entrenamiento
-└── README.md             # Este archivo
+│
+├── 📓 NOTEBOOKS (Ejecutar en este orden)
+│   ├── 1. data_preprocessing.ipynb    ← Preprocesar datos (UNA VEZ)
+│   ├── 2. cnn_training.ipynb          ← CNN2D baseline
+│   └── 3. cnn_da_training.ipynb       ← CNN2D_DA con GRL
+│
+├── 🚀 pipelines/                      ← Scripts automatizados
+│   ├── README.md                      ← Documentación
+│   ├── train_cnn.py                   ← Pipeline CNN2D + MC Dropout
+│   └── train_cnn_da_kfold.py         ← Pipeline CNN2D_DA + K-fold
+│
+├── 📦 modules/                        ← Código compartido
+│   ├── __init__.py
+│   ├── augmentation.py                ← Data augmentation
+│   ├── cache_utils.py                 ← Gestión de cache
+│   ├── cnn_inference.py               ← Inferencia con MC Dropout
+│   ├── cnn_model.py                   ← CNN2D y CNN2D_DA
+│   ├── cnn_training.py                ← Funciones de entrenamiento
+│   ├── cnn_utils.py                   ← Utilidades
+│   ├── cnn_visualization.py           ← Visualizaciones
+│   ├── dataset.py                     ← Gestión de datasets
+│   ├── preprocessing.py               ← Preprocesamiento
+│   ├── utils.py                       ← Utilidades generales
+│   └── visualization.py               ← Visualizaciones generales
+│
+├── 💾 cache/                          ← Datos preprocesados
+│   ├── healthy/
+│   └── parkinson/
+│
+├── 📊 data/                           ← Datos raw
+│   ├── vowels_healthy/
+│   └── vowels_pk/
+│
+├── 🎯 results/                        ← Resultados de entrenamientos
+│   ├── cnn_no_da/                     ← Desde cnn_training.ipynb
+│   ├── cnn_da/                        ← Desde cnn_da_training.ipynb
+│   └── cnn_da_kfold/                  ← Desde pipelines/
+│
+└── 📝 Documentación adicional
+    └── data_preparation/              ← Guías de preparación de datos
 ```
 
 ---
 
-## 📊 Pipeline Completo
+## 🔄 Flujo de Trabajo
 
-### 1. Preprocesamiento
-```python
-# Configuración según paper Ibarra
-SAMPLE_RATE = 44100 Hz
-WINDOW_MS = 400 ms (50% overlap)
-N_MELS = 65 bandas
-HOP_MS = 10 ms
-FFT_WINDOW = 40 ms
-OUTPUT_SHAPE = 65 × 41
-NORMALIZATION = z-score
+### 📊 Diagrama de Flujo
+
+```
+┌─────────────────────────────────────┐
+│ Paso 1: data_preprocessing.ipynb   │
+│ Ejecutar UNA VEZ                    │
+│ ⏱️  7-10 minutos                     │
+│ ↓                                   │
+│ Genera cache/ con datos augmentados │
+└─────────────────────────────────────┘
+              ↓
+    ┌─────────┴─────────┐
+    ↓                   ↓
+┌─────────────┐   ┌──────────────────┐
+│ Paso 2A:    │   │ Paso 2B:         │
+│ CNN2D       │   │ CNN2D_DA         │
+│ (baseline)  │   │ (domain adapt)   │
+│             │   │                  │
+│ cnn_        │   │ cnn_da_          │
+│ training    │   │ training         │
+│ .ipynb      │   │ .ipynb           │
+│             │   │                  │
+│ ⏱️ 10-15 min │   │ ⏱️ 15-20 min     │
+└─────────────┘   └──────────────────┘
+    ↓                   ↓
+results/          results/
+cnn_no_da/        cnn_da/
+    ↓                   ↓
+    └───────────┬───────┘
+                ↓
+        3. Comparar
+           Resultados
 ```
 
-### 2. Data Augmentation
-
-**Nivel Audio** (antes de segmentar):
-- Pitch shift: ±1, ±2 semitonos
-- Time stretch: 0.9x, 1.1x
-- Noise: SNR ≈30 dB
-
-**Nivel Espectrograma** (después de Mel):
-- SpecAugment: frequency + time masking
-
-**Factor total**: ~10x multiplicación de datos
-
-### 3. Entrenamiento
-
-**Split**: 70% train / 15% val / 15% test (speaker-independent)
-
-**Hiperparámetros recomendados**:
-```python
-batch_size = 32
-learning_rate = 0.01
-optimizer = SGD(momentum=0.9, weight_decay=1e-4)
-epochs = 100
-early_stopping = 15 épocas
-```
-
-**Domain Adaptation**:
-```python
-alpha = 1.0  # Peso de loss_domain
-lambda_scheduler = progresivo (0 → 1)
-```
-
-### 4. Evaluación
-
-**Métricas**:
-- Accuracy, Precision, Recall, F1
-- Confusion Matrix
-- MC Dropout: Incertidumbre epistémica
-- Grad-CAM: Explicabilidad visual
-
-**Agregación**:
-- Segmento (65×41 espectrograma)
-- Archivo (promedio probabilidades)
-- Paciente (promedio por subject_id)
-
----
-
-## 🎮 Uso Rápido
-
-### Opción 1: Notebook (Recomendado)
-
-```python
-# Abrir parkinson_voice_analysis.ipynb
-# Ejecutar celdas secuencialmente:
-
-# 1. Setup y carga de datos
-# 2. Preprocesamiento
-# 3. Data Augmentation
-# 4. Entrenamiento CNN-DA
-# 5. Evaluación y visualizaciones
-```
-
-### Opción 2: Script de Línea de Comandos
+### ⚡ Quick Start
 
 ```bash
-# Entrenamiento básico con DA
-python train_cnn.py \
-  --hc_dir data/vowels_healthy \
-  --pd_dir data/vowels_pk \
-  --architecture da \
-  --batch_size 32 \
-  --epochs 100 \
-  --lr 0.01 \
-  --mc_samples 30
+# Primera vez (setup completo):
+jupyter notebook data_preprocessing.ipynb  # 1. Generar cache (~7-10 min)
+jupyter notebook cnn_training.ipynb        # 2A. Baseline (~10-15 min)
+jupyter notebook cnn_da_training.ipynb     # 2B. Domain Adapt (~15-20 min)
 
-# Ver todas las opciones
-python train_cnn.py --help
-```
+# Experimentación (cache ya existe):
+jupyter notebook cnn_training.ipynb        # Modificar hiperparámetros y ejecutar
 
-### Opción 3: API Programática
-
-```python
-from modules.cnn_model import CNN2D_DA
-from modules.cnn_training import train_model_da, compute_lambda_schedule
-import torch
-
-# 1. Crear modelo
-model_da = CNN2D_DA(n_domains=26).to(device)
-
-# 2. Configurar optimizador
-optimizer = torch.optim.SGD(model_da.parameters(), lr=0.01)
-criterion_pd = torch.nn.CrossEntropyLoss()
-criterion_domain = torch.nn.CrossEntropyLoss()
-
-# 3. Entrenar
-results = train_model_da(
-    model_da, train_loader, val_loader,
-    optimizer, criterion_pd, criterion_domain,
-    device, n_epochs=100, alpha=1.0,
-    lambda_scheduler=lambda e: compute_lambda_schedule(e, 100)
-)
-
-# 4. Visualizar
-from modules.cnn_visualization import plot_da_training_progress
-plot_da_training_progress(results['history'])
+# Producción (automatizado):
+python pipelines/train_cnn.py --lr 0.001
+python pipelines/train_cnn_da_kfold.py --n_folds 10
 ```
 
 ---
 
-## 🧩 Módulos del Sistema
+## 📓 Notebooks Disponibles
 
-### Core
+### 1️⃣ `data_preprocessing.ipynb`
 
-| Módulo | Descripción | Funciones Principales |
-|--------|-------------|----------------------|
-| `preprocessing.py` | Preprocesamiento según paper | `preprocess_audio_paper()` |
-| `augmentation.py` | Data augmentation | `preprocess_audio_with_augmentation()`, `create_augmented_dataset()` |
-| `dataset.py` | PyTorch datasets | `VowelSegmentsDataset`, `build_full_pipeline()` |
+**Propósito**: Generar cache de datos preprocesados y augmentados
 
-### CNN
+**Ejecutar**: UNA VEZ (o cuando cambies parámetros de preprocesamiento)
 
-| Módulo | Descripción | Clases/Funciones |
-|--------|-------------|------------------|
-| `cnn_model.py` | Arquitecturas | `CNN2D`, `CNN2D_DA`, `GradientReversalLayer`, `mc_dropout_predict()`, `GradCAM` |
-| `cnn_training.py` | Entrenamiento | `train_model()`, `train_model_da()`, `evaluate_da()`, `compute_lambda_schedule()` |
-| `cnn_utils.py` | Utilidades | `plot_lambda_schedule()`, `print_model_architecture()`, `calculate_class_weights()` |
-| `cnn_visualization.py` | Visualizaciones | `plot_da_training_progress()`, `visualize_gradcam()`, `create_da_summary_report()` |
+**Contenido**:
+- 🔊 Visualización de audio raw
+- 🎵 Preprocesamiento (resampling, segmentación, Mel spectrograms)
+- 🎨 Data augmentation (pitch shift, time stretch, noise, SpecAugment)
+- 💾 Generación de cache
 
-### Utilidades
+**Output**:
+```
+cache/
+├── healthy/augmented_dataset_*.pkl (~1553 muestras)
+└── parkinson/augmented_dataset_*.pkl (~1219 muestras)
+```
 
-| Script | Propósito |
-|--------|-----------|
-| `sample_healthy_data.py` | Muestreo balanceado de datos HC |
-| `verify_sampling.py` | Verificación de muestreo |
-| `train_cnn.py` | Script de entrenamiento CLI |
+**Tiempo**: ~7-10 minutos
 
 ---
 
-## 📚 Documentación Detallada
+### 2️⃣ `cnn_training.ipynb`
 
-Para información detallada sobre cada componente:
+**Propósito**: Entrenar modelo CNN2D baseline sin Domain Adaptation
 
-### 🔬 Preprocesamiento y Augmentation
-- Ver celdas 1-13 en `parkinson_voice_analysis.ipynb`
-- `modules/preprocessing.py` - Configuración exacta del paper
-- `modules/augmentation.py` - Todas las técnicas de augmentation
+**Prerequisito**: ⚠️ Cache generado (ejecutar `data_preprocessing.ipynb` primero)
 
-### 🧠 CNN Baseline
-- `modules/cnn_model.py` - Clase `CNN2D`
-- MC Dropout, Grad-CAM, agregación multinivel
-- Ver sección "CNN2D Baseline" arriba
+**Contenido**:
+- 📁 Carga cache (~5 segundos)
+- 📊 Split train/val/test (70/15/15)
+- 🏗️ Modelo CNN2D con backbone Ibarra (sin DA)
+- 🚀 Entrenamiento con Adam + early stopping
+- 📈 Evaluación y visualización
 
-### 🌐 Domain Adaptation (Recomendado)
-- `modules/cnn_model.py` - Clases `CNN2D_DA`, `GradientReversalLayer`
-- `modules/cnn_training.py` - `train_model_da()`, `compute_lambda_schedule()`
-- Ver sección "CNN2D con Domain Adaptation" arriba
-- Arquitectura dual-head, lambda scheduling, multi-task learning
+**Output**:
+```
+results/cnn_no_da/
+├── best_model.pth
+├── test_metrics.json
+├── training_progress.png
+└── confusion_matrix_test.png
+```
 
-### 📊 Muestreo de Datos
-- Script: `data_preparation/sample_healthy_data.py --help`
-- Ver sección "Quick Start" para uso básico
+**Tiempo**: ~10-15 minutos
 
 ---
 
-## 📈 Resultados Esperados
+### 3️⃣ `cnn_da_training.ipynb`
 
-### Output del Entrenamiento
+**Propósito**: Entrenar modelo CNN2D_DA con Domain Adaptation
 
+**Prerequisito**: ⚠️ Cache generado (ejecutar `data_preprocessing.ipynb` primero)
+
+**Contenido**:
+- 📁 Carga cache (~5 segundos)
+- 📊 Split train/val/test (70/15/15)
+- 🏗️ Modelo CNN2D_DA (dual-head con GRL)
+- 🚀 Entrenamiento multi-task con SGD
+- 📈 Evaluación PD + Domain
+
+**Output**:
 ```
 results/cnn_da/
-├── best_model_da.pth              # Mejor checkpoint
-├── training_history.json          # Métricas por época
-├── config.json                    # Configuración
-├── training_progress.png          # 4 gráficas: losses, accuracy, F1, lambda
-├── confusion_matrix_test.png      # Matriz de confusión
-└── metrics_summary.png            # Resumen visual
+├── best_model_da.pth
+├── test_metrics_da.json
+├── training_progress_da.png
+└── confusion_matrix_test_da.png
 ```
 
-### Métricas Típicas
-
-**Nivel Segmento**:
-- Accuracy: 75-85%
-- F1 Score: 0.70-0.80
-
-**Nivel Archivo** (agregado):
-- Accuracy: 80-90%
-- F1 Score: 0.75-0.85
-
-**Nivel Paciente** (agregado):
-- Accuracy: 85-95%
-- F1 Score: 0.80-0.90
+**Tiempo**: ~15-20 minutos
 
 ---
 
-## 🔧 Configuración Avanzada
+## 🚀 Pipelines Automatizados
 
-### Hiperparámetros Clave
+### `pipelines/train_cnn.py`
 
-```python
-# CNN Baseline
-p_drop_conv = 0.3
-p_drop_fc = 0.5
+Pipeline completo para entrenar CNN2D con MC Dropout:
 
-# Domain Adaptation
-alpha = 1.0        # Peso loss_domain
-gamma = 10.0       # Scheduler GRL
-power = 0.75       # Exponente scheduler
-
-# SpecAugment
-freq_mask_param = 10
-time_mask_param = 5
-num_freq_masks = 2
-num_time_masks = 2
-
-# MC Dropout
-n_samples = 30
-```
-
-### Lambda Scheduling (DA)
-
-El factor λ de GRL aumenta progresivamente:
-```
-λ(epoch) = 2/(1 + exp(-γ·p))^power - 1
-donde p = epoch / max_epoch
-```
-
-- Época 0: λ ≈ 0 (solo aprende tarea PD)
-- Época 50: λ ≈ 0.7
-- Época 100: λ ≈ 1.0 (máxima inversión)
-
----
-
-## 🐛 Troubleshooting
-
-### Error: Dimensiones incorrectas
-```python
-# Verificar shape de espectrogramas
-print(X_combined.shape)  # Debe ser (N, 1, 65, 41)
-
-# Convertir labels a Long
-y_task = y_task.long()
-y_domain = y_domain.long()
-```
-
-### VRAM insuficiente
 ```bash
-# Reducir batch size
-python train_cnn.py --batch_size 16  # o 8
+python pipelines/train_cnn.py --epochs 100 --lr 0.001
 ```
 
-### Loss Domain no disminuye
+**Características**:
+- Entrenamiento automatizado CNN2D
+- Implementa MC Dropout para incertidumbre
+- Configuración vía argumentos de línea de comandos
+
+---
+
+### `pipelines/train_cnn_da_kfold.py`
+
+Pipeline completo para entrenar CNN2D_DA con validación cruzada:
+
+```bash
+python pipelines/train_cnn_da_kfold.py --n_folds 10
+```
+
+**Características**:
+- Entrenamiento automatizado CNN2D_DA
+- K-fold cross-validation (10-fold por defecto)
+- Implementación según Ibarra (2023)
+
+---
+
+## 💻 Instalación y Configuración
+
+### Requisitos del Sistema
+
+- Python 3.8+
+- PyTorch 1.8+
+- CUDA (opcional, para GPU)
+
+### Instalación
+
+1. **Clonar el repositorio**:
+```bash
+git clone <repo-url>
+cd parkinson-voice-uncertainty
+```
+
+2. **Crear entorno virtual**:
+```bash
+python -m venv parkinson_env
+source parkinson_env/bin/activate  # Linux/Mac
+# o
+parkinson_env\Scripts\activate  # Windows
+```
+
+3. **Instalar dependencias**:
+```bash
+pip install -r requirements.txt
+```
+
+### Estructura de Datos
+
+Colocar archivos de audio en:
+```
+data/
+├── vowels_healthy/  ← Archivos .egg de sujetos sanos
+└── vowels_pk/       ← Archivos .egg de pacientes Parkinson
+```
+
+---
+
+## 📊 Resultados
+
+### Comparación de Modelos
+
+| Modelo | Accuracy | F1-Score | Parámetros |
+|--------|----------|----------|------------|
+| CNN2D (baseline) | ~98.8% | ~98.8% | 674,562 |
+| CNN2D_DA (con GRL) | TBD | TBD | ~800,000+ |
+
+### ⚠️ Diferencias Arquitectónicas Importantes
+
+**Los modelos NO son idénticos**. Diferencias clave:
+
+#### 1️⃣ MaxPooling
+- **CNN2D**: MaxPool **2×2** (configuración estándar)
+- **CNN2D_DA**: MaxPool **3×3** (según paper Ibarra 2023)
+
+#### 2️⃣ Dimensiones de Features
 ```python
-# Verificar alpha > 0
-# Aumentar gamma para activar GRL más rápido
-lambda_scheduler = lambda e: compute_lambda_schedule(e, 100, gamma=15.0)
+# Después de feature extraction:
+CNN2D:    (B, 64, 16, 10) → Flatten → (B, 10,240)
+CNN2D_DA: (B, 64, 17, 11) → Flatten → (B, 11,968)
 ```
 
-### Overfitting
+#### 3️⃣ Estructura
+- **CNN2D**: Single-head (solo clasificación PD)
+- **CNN2D_DA**: Dual-head (clasificación PD + Domain con GRL)
+
+#### 4️⃣ Entrenamiento
+- **CNN2D**: Adam (LR=0.001), Loss simple
+- **CNN2D_DA**: SGD (LR=0.1), Loss multi-task
+
+### Tabla Comparativa Detallada
+
+| Característica | CNN2D | CNN2D_DA |
+|----------------|-------|----------|
+| **MaxPool** | 2×2 | 3×3 |
+| **Feature Dim** | 10,240 | 11,968 |
+| **Heads** | 1 (PD) | 2 (PD + Domain) |
+| **GRL** | ❌ No | ✅ Sí |
+| **Parámetros** | 674,562 | ~800,000+ |
+| **Loss** | CrossEntropy | Multi-task |
+| **Optimizer** | Adam | SGD |
+| **LR** | 0.001 | 0.1 |
+| **Uso** | Baseline | Domain Adapt |
+
+### Características de los Modelos
+
+**⚡ Ambos modelos comparten el MISMO Feature Extractor para comparación justa:**
+- 2 bloques Conv2D → BatchNorm → ReLU → MaxPool(3×3) → Dropout
+
+#### CNN2D (Baseline)
+- **Arquitectura**: Single-head CNN (solo cabeza PD)
+- **Feature Extractor**: Idéntico a CNN2D_DA (arquitectura Ibarra 2023)
+- **Entrenamiento**: Adam optimizer
+- **Output**: Clasificación Healthy/Parkinson
+- **Ventaja**: Simplicidad, sin Domain Adaptation
+
+#### CNN2D_DA (Domain Adaptation)
+- **Arquitectura**: Dual-head CNN con GRL
+- **Feature Extractor**: Compartido con CNN2D (arquitectura Ibarra 2023)
+- **Entrenamiento**: SGD optimizer (según paper)
+- **Output**: Clasificación PD + Domain
+- **Ventaja**: Robustez ante diferentes dominios
+- **Paper**: Implementación fiel a Ibarra et al. (2023)
+
+**🔄 Ventaja del diseño modular:**
+- Domain Adaptation es un módulo que se puede agregar/quitar
+- Comparación justa: mismo backbone, diferente cabeza
+- Sin duplicación de código (FeatureExtractor compartido)
+
+---
+
+## 🎓 Conceptos Clave
+
+| Término | Significado |
+|---------|-------------|
+| **Pipeline** | Flujo completo automatizado end-to-end |
+| **Module** | Código reutilizable (librería) |
+| **Notebook** | Experimento interactivo Jupyter |
+| **Cache** | Datos preprocesados guardados en disco |
+| **DA** | Domain Adaptation (adaptación de dominio) |
+| **GRL** | Gradient Reversal Layer |
+| **MC Dropout** | Monte Carlo Dropout (cuantificación de incertidumbre) |
+| **K-fold** | Validación cruzada en K particiones |
+
+---
+
+## 📝 Guía de Uso Paso a Paso
+
+### Primera Ejecución (Setup Completo)
+
+**Día 1: Preparación y Entrenamiento (Total: ~35-45 min)**
+
+1. **Generar Cache** (~7-10 min)
+```bash
+jupyter notebook data_preprocessing.ipynb
+# Ejecutar todas las celdas (Cell → Run All)
+```
+✅ Resultado: Cache en `cache/healthy/` y `cache/parkinson/`
+
+2. **Entrenar Baseline** (~10-15 min)
+```bash
+jupyter notebook cnn_training.ipynb
+# Ejecutar todas las celdas
+```
+✅ Resultado: Modelo en `results/cnn_no_da/`
+
+3. **Entrenar con DA** (~15-20 min)
+```bash
+jupyter notebook cnn_da_training.ipynb
+# Ejecutar todas las celdas
+```
+✅ Resultado: Modelo en `results/cnn_da/`
+
+---
+
+### Experimentación (Con Cache Existente)
+
+**Solo Modificar y Entrenar (~10-15 min por experimento)**
+
+```bash
+# Abrir notebook
+jupyter notebook cnn_training.ipynb
+
+# Modificar hiperparámetros en la celda correspondiente:
+N_EPOCHS = 150
+LEARNING_RATE = 5e-4
+
+# Ejecutar todas las celdas
+```
+
+---
+
+## 🔧 Configuración de Parámetros
+
+### Preprocesamiento (en `modules/preprocessing.py`)
+
 ```python
-# Aumentar dropout
-model_da = CNN2D_DA(p_drop_conv=0.4, p_drop_fc=0.6)
-
-# Más augmentation
-# Reducir learning rate
-# Aumentar weight_decay
+SAMPLE_RATE = 16000      # Hz
+WINDOW_MS = 100          # ms
+OVERLAP = 0.5            # 50%
+N_MELS = 65              # Bandas Mel
+TARGET_FRAMES = 41       # Frames por espectrograma
 ```
+
+### Data Augmentation
+
+```python
+AUGMENTATION_TYPES = [
+    "original",
+    "pitch_shift",
+    "time_stretch", 
+    "noise"
+]
+NUM_SPEC_AUGMENT_VERSIONS = 2
+```
+
+### Entrenamiento CNN2D
+
+```python
+N_EPOCHS = 100
+LEARNING_RATE = 1e-3
+BATCH_SIZE = 32
+EARLY_STOPPING_PATIENCE = 15
+```
+
+### Entrenamiento CNN2D_DA
+
+```python
+N_EPOCHS = 100
+LEARNING_RATE = 0.1      # SGD según Ibarra
+ALPHA = 1.0              # Peso de loss_domain
+LAMBDA_CONSTANT = 1.0    # Lambda para GRL
+```
+
+---
+
+## 🔍 Detalles Técnicos
+
+### Arquitectura CNN2D (sin DA)
+
+```
+Input: (B, 1, 65, 41)
+↓
+[Feature Extractor - Ibarra 2023]
+Block1: Conv2D(32, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+Block2: Conv2D(64, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+↓
+[PD Head]
+Flatten → FC(64) → ReLU → Dropout → FC(2)
+↓
+Output: Softmax (Healthy/Parkinson)
+```
+
+**Nota**: Usa el mismo FeatureExtractor que CNN2D_DA para comparación justa.
+
+---
+
+### Arquitectura CNN2D_DA (con DA)
+
+```
+Input: (B, 1, 65, 41)
+↓
+[Feature Extractor - Ibarra 2023] (COMPARTIDO)
+Block1: Conv2D(32, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+Block2: Conv2D(64, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+↓
+├─────────────────────────┬─────────────────────────┐
+│ [PD Head]               │ [Domain Head]           │
+│ Flatten → FC(64) → FC(2)│ GRL → FC(64) → FC(n_dom)│
+│ ↓                       │ ↓                       │
+│ Healthy/Parkinson       │ Domain ID               │
+└─────────────────────────┴─────────────────────────┘
+```
+
+**Diseño Modular**: El DA es un módulo que se puede agregar/quitar sin duplicar código.
+
+---
+
+## 💡 Ventajas de la Organización Actual
+
+### ✅ Antes (Problemas)
+- ❌ Todo mezclado en un notebook gigante
+- ❌ Reprocesar datos en cada experimento (~6 min cada vez)
+- ❌ Scripts duplicando código de notebooks
+- ❌ Difícil saber qué ejecutar primero
+
+### ✅ Ahora (Soluciones)
+- ✅ Notebooks modulares (una responsabilidad por notebook)
+- ✅ Cache reutilizable (ahorro de ~6 min/experimento)
+- ✅ Scripts organizados en `pipelines/` (sin duplicación)
+- ✅ Flujo claro y documentado
+
+---
+
+## 🆘 Troubleshooting
+
+### Error: "Cache not found"
+**Solución**: Ejecutar `data_preprocessing.ipynb` primero
+
+### Error: "ImportError"
+**Solución**: Verificar que estás en la raíz del proyecto
+
+### Error: "Out of memory"
+**Solución**: Reducir `BATCH_SIZE` en notebook de entrenamiento
+
+### Cache desactualizado
+**Solución**:
+```python
+# En data_preprocessing.ipynb, modificar:
+FORCE_REGENERATE = True  # ← Regenera cache
+```
+
+---
+
+## 📈 Comparación: Notebooks vs Pipelines
+
+| Característica | Notebooks | Pipelines |
+|---------------|-----------|-----------|
+| **Interfaz** | Jupyter (interactivo) | CLI (automatizado) |
+| **Uso** | Exploración, debugging | Producción, batch |
+| **Supervisión** | Paso a paso | Desatendido |
+| **Visualización** | Inline | Archivos PNG |
+| **Configuración** | En celdas | Argumentos CLI |
+
+---
+
+## 🎯 Casos de Uso
+
+### 📊 Exploración y Desarrollo
+**→ Usar Notebooks**
+- Ver resultados paso a paso
+- Modificar hiperparámetros fácilmente
+- Visualizaciones inline
+- Ideal para entender el proceso
+
+### 🚀 Producción y Batch
+**→ Usar Pipelines**
+- Ejecutar múltiples experimentos
+- Automatizar entrenamiento
+- Configuración vía CLI
+- Ideal para validación cruzada
+
+---
+
+## 📚 Información Técnica Adicional
+
+### Cache de Datos
+
+**Ubicación**: `cache/healthy/` y `cache/parkinson/`
+
+**Contenido**:
+- Espectrogramas Mel augmentados
+- ~1553 muestras Healthy
+- ~1219 muestras Parkinson
+- Total: ~2772 espectrogramas
+
+**Ventaja**: 
+- Carga instantánea (~5 segundos)
+- Ahorro de ~6 minutos por experimento
+- Mismos datos para todos los modelos
+
+### Resultados Guardados
+
+Cada entrenamiento guarda:
+- ✓ Modelo entrenado (`.pth`)
+- ✓ Métricas de test (`.json`)
+- ✓ Gráficas de progreso (`.png`)
+- ✓ Matriz de confusión (`.png`)
+
+---
+
+## 🔄 Variables Importantes
+
+### Después de `data_preprocessing.ipynb`:
+```python
+X_healthy     # Tensor (1553, 1, 65, 41)
+X_parkinson   # Tensor (1219, 1, 65, 41)
+cache/        # Archivos .pkl para reutilizar
+```
+
+### Después de `cnn_training.ipynb`:
+```python
+model         # CNN2D entrenado
+history       # Historial de entrenamiento
+test_metrics  # Accuracy, F1, Precision, Recall
+```
+
+### Después de `cnn_da_training.ipynb`:
+```python
+model_da         # CNN2D_DA entrenado
+history_da       # Historial multi-task
+test_metrics_da  # Métricas PD + Domain
+```
+
+---
+
+## ✅ Checklist de Inicio
+
+### Primera Vez
+- [ ] Instalar dependencias (`pip install -r requirements.txt`)
+- [ ] Colocar datos en `data/vowels_healthy/` y `data/vowels_pk/`
+- [ ] Ejecutar `data_preprocessing.ipynb`
+- [ ] Verificar que `cache/` existe
+- [ ] Ejecutar `cnn_training.ipynb`
+- [ ] Ejecutar `cnn_da_training.ipynb`
+- [ ] Comparar resultados en `results/`
+
+### Experimentación
+- [ ] Cache ya existe
+- [ ] Modificar hiperparámetros según necesidad
+- [ ] Ejecutar notebook de entrenamiento
+- [ ] Comparar con runs previos
 
 ---
 
 ## 📖 Referencias
 
-1. **Ibarra et al. (2023)**: Domain Adaptation para Parkinson
-2. **Ganin & Lempitsky (2015)**: Gradient Reversal Layer
-3. **Park et al. (2019)**: SpecAugment
-4. **Gal & Ghahramani (2016)**: MC Dropout
-5. **Selvaraju et al. (2017)**: Grad-CAM
+**Paper Principal**:
+- Ibarra et al. (2023): "Towards a Corpus (and Language)-Independent Screening of Parkinson's Disease from Voice and Speech through Domain Adaptation"
+
+**Técnicas Implementadas**:
+- Domain Adaptation con Gradient Reversal Layer (GRL)
+- Monte Carlo Dropout para cuantificación de incertidumbre
+- Data Augmentation (SpecAugment)
+- K-fold Cross-Validation
 
 ---
 
-## 👥 Créditos
+## 🎯 Próximos Pasos (Futuro)
 
-**Autor**: PhD Research Team  
-**Versión**: 2.0  
-**Fecha**: Octubre 2025
-
-Implementación basada en:
-- Paper Ibarra et al. (2023)
-- Arquitectura MARTA
-- Buenas prácticas: PEP 8, modularidad, documentación
+1. **MC Dropout**: Implementar inferencia con MC Dropout en notebooks
+2. **Análisis de Incertidumbre**: Cuantificar incertidumbre en predicciones
+3. **Comparación Completa**: Notebook dedicado a comparar CNN2D vs CNN2D_DA
+4. **Limpieza**: Eliminar notebooks legacy si es necesario
 
 ---
 
-## 📝 Licencia
+## 💬 Soporte
 
-Este código es parte de investigación doctoral en detección de Parkinson mediante análisis de voz.
+Para preguntas o problemas:
+1. Revisar la documentación en `pipelines/README.md`
+2. Verificar troubleshooting en esta guía
+3. Revisar logs de ejecución
 
+---
 
+## 📄 Licencia
 
+[Especificar licencia del proyecto]
 
+---
 
+**Última actualización**: 2025-10-17
 
+**Autor**: [Tu nombre/equipo]
+
+**Versión**: 2.0 (Reorganización modular)

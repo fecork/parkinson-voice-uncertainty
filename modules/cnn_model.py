@@ -18,15 +18,19 @@ from typing import Optional, Tuple
 
 class CNN2D(nn.Module):
     """
-    CNN 2D ligera para clasificación binaria PD vs HC.
+    CNN 2D para clasificación binaria PD vs HC (sin Domain Adaptation).
 
-    Arquitectura:
-        - Conv(32, 3×3) → BN → ReLU → MaxPool(2×2) → Dropout
-        - Conv(64, 3×3) → BN → ReLU → MaxPool(2×2) → Dropout
-        - Flatten → Dense(64) → ReLU → Dropout → Dense(2)
+    Arquitectura (igual backbone que CNN2D_DA):
+        - Bloque 1: Conv2d(32, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+        - Bloque 2: Conv2d(64, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+        - PD Head: Flatten → Dense(64) → ReLU → Dropout → Dense(2)
 
     Input shape: (B, 1, 65, 41)
     Output: (B, 2) logits
+
+    Note:
+        Usa el mismo FeatureExtractor que CNN2D_DA para permitir
+        comparación justa entre arquitecturas con y sin DA.
     """
 
     def __init__(
@@ -50,50 +54,18 @@ class CNN2D(nn.Module):
         self.p_drop_fc = p_drop_fc
         self.input_shape = input_shape
 
-        # Feature extractor
-        self.features = nn.Sequential(
-            # Bloque 1: (B, 1, H, W) → (B, 32, H//2, W//2)
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(p=p_drop_conv),
-            # Bloque 2: (B, 32, H//2, W//2) → (B, 64, H//4, W//4)
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(p=p_drop_conv),
+        # Feature extractor (compartido con CNN2D_DA)
+        self.feature_extractor = FeatureExtractor(
+            p_drop_conv=p_drop_conv, input_shape=input_shape
         )
 
-        # Calcular tamaño después de convoluciones dinámicamente
-        self.feature_dim = self._calculate_feature_dim(input_shape)
-
-        # Classifier head
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(self.feature_dim, 64),
-            nn.ReLU(inplace=True),
-            nn.Dropout(p=p_drop_fc),
-            nn.Linear(64, n_classes),
+        # PD Head (clasificación Parkinson)
+        self.pd_head = ClassifierHead(
+            feature_dim=self.feature_extractor.feature_dim,
+            hidden_dim=64,
+            n_classes=n_classes,
+            p_drop_fc=p_drop_fc,
         )
-
-    def _calculate_feature_dim(self, input_shape: Tuple[int, int]) -> int:
-        """
-        Calcula la dimensión de features después de capas convolucionales.
-
-        Args:
-            input_shape: Dimensiones de entrada (H, W)
-
-        Returns:
-            Dimensión aplanada de las features
-        """
-        # Crear tensor dummy y pasarlo por capas convolucionales
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, 1, *input_shape)
-            dummy_output = self.features(dummy_input)
-            # Retornar tamaño aplanado (C * H * W)
-            return dummy_output.numel()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -105,8 +77,8 @@ class CNN2D(nn.Module):
         Returns:
             Logits (B, n_classes)
         """
-        features = self.features(x)
-        logits = self.classifier(features)
+        features = self.feature_extractor(x)
+        logits = self.pd_head(features)
         return logits
 
     def forward_with_features(
@@ -119,11 +91,11 @@ class CNN2D(nn.Module):
             x: Input tensor (B, 1, 65, 41)
 
         Returns:
-            features: Feature maps de última conv (B, 64, 16, 10)
+            features: Feature maps de última conv (B, 64, H', W')
             logits: Logits (B, n_classes)
         """
-        features = self.features(x)
-        logits = self.classifier(features)
+        features = self.feature_extractor(x)
+        logits = self.pd_head(features)
         return features, logits
 
 
@@ -308,9 +280,13 @@ def get_last_conv_layer(model: CNN2D) -> nn.Module:
     Returns:
         Última capa Conv2d
     """
-    # En nuestro modelo, la última conv es features[5]
-    # (después de BN y antes de MaxPool)
-    for i, module in enumerate(model.features):
+    # La última conv está en block2 del feature extractor
+    for module in model.feature_extractor.block2:
+        if isinstance(module, nn.Conv2d):
+            return module
+
+    # Fallback: buscar en block1
+    for module in model.feature_extractor.block1:
         if isinstance(module, nn.Conv2d):
             last_conv = module
 
