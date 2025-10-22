@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 from collections import Counter
+from pathlib import Path
+import pickle
 import numpy as np
 import torch
 
@@ -353,6 +355,64 @@ def build_full_pipeline(
         "metadata": metas,
         "summary": dist,
     }
+
+
+# ============================================================
+# CACHE UTILITIES
+# ============================================================
+
+
+def save_spectrograms_cache(dataset: List[Dict], cache_path: str) -> None:
+    """
+    Guarda espectrogramas individuales en cache.
+
+    Según Ibarra et al. (2023), guardamos espectrogramas individuales (65×41)
+    que pueden reutilizarse para CNN2D y Time-CNN-LSTM.
+
+    Args:
+        dataset: Lista de dicts con espectrogramas y metadata
+        cache_path: Path al archivo cache
+    """
+    cache_file = Path(cache_path)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(cache_file, "wb") as f:
+        pickle.dump(dataset, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    size_mb = cache_file.stat().st_size / (1024 * 1024)
+    print(f"\n💾 Cache guardado: {cache_path}")
+    print(f"   Tamaño: {size_mb:.1f} MB")
+    print(f"   Muestras: {len(dataset)}")
+
+
+def load_spectrograms_cache(cache_path: str) -> Optional[List[Dict]]:
+    """
+    Carga espectrogramas individuales desde cache.
+
+    Args:
+        cache_path: Path al archivo cache
+
+    Returns:
+        Lista de dicts con espectrogramas o None si no existe
+    """
+    cache_file = Path(cache_path)
+
+    if not cache_file.exists():
+        return None
+
+    try:
+        with open(cache_file, "rb") as f:
+            dataset = pickle.load(f)
+
+        size_mb = cache_file.stat().st_size / (1024 * 1024)
+        print(f"✅ Cache cargado: {cache_path}")
+        print(f"   Tamaño: {size_mb:.1f} MB")
+        print(f"   Muestras: {len(dataset)}")
+
+        return dataset
+    except Exception as e:
+        print(f"⚠️  Error cargando cache: {e}")
+        return None
 
 
 # ============================================================

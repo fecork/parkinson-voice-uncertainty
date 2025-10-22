@@ -41,12 +41,16 @@ def load_audio_file(
     """
     Load and resample audio file to target sample rate.
 
+    Following Ibarra et al. (2023):
+    - Resample to 44.1 kHz (if needed)
+    - Normalize by maximum absolute amplitude
+
     Args:
         file_path: Path to audio file
         target_sr: Target sample rate (default: 44.1 kHz)
 
     Returns:
-        audio: Resampled audio signal
+        audio: Resampled and normalized audio signal
         sr: Sample rate
     """
     try:
@@ -54,6 +58,11 @@ def load_audio_file(
 
         if original_sr != target_sr:
             audio = librosa.resample(audio, orig_sr=original_sr, target_sr=target_sr)
+
+        # Normalize by maximum absolute amplitude (paper requirement)
+        max_abs = np.max(np.abs(audio))
+        if max_abs > 0:
+            audio = audio / max_abs
 
         return audio, target_sr
     except Exception as e:
@@ -141,6 +150,77 @@ def normalize_spectrogram(mel_spec_db: np.ndarray) -> np.ndarray:
         Normalized spectrogram
     """
     return (mel_spec_db - np.mean(mel_spec_db)) / (np.std(mel_spec_db) + 1e-8)
+
+
+def create_full_mel_spectrogram(
+    audio: np.ndarray,
+    sr: int = SAMPLE_RATE,
+    n_mels: int = N_MELS,
+    hop_length: Optional[int] = None,
+    window_length: Optional[int] = None,
+) -> np.ndarray:
+    """
+    Crea un espectrograma Mel del audio completo (sin segmentar).
+
+    Útil para aplicar SpecAugment ANTES de segmentar, manteniendo
+    consistencia temporal en las máscaras.
+
+    Args:
+        audio: Señal de audio completa
+        sr: Sample rate
+        n_mels: Número de bandas Mel
+        hop_length: Hop length en samples
+        window_length: FFT window length
+
+    Returns:
+        Mel spectrogram completo en dB (n_mels, T_total)
+    """
+    if hop_length is None:
+        hop_length = int(HOP_MS * sr / 1000)
+
+    if window_length is None:
+        window_length = int(FFT_WINDOW * sr / 1000)
+
+    mel_spec = librosa.feature.melspectrogram(
+        y=audio,
+        sr=sr,
+        n_mels=n_mels,
+        hop_length=hop_length,
+        n_fft=window_length,
+        fmax=sr // 2,
+    )
+
+    return librosa.power_to_db(mel_spec, ref=np.max)
+
+
+def segment_spectrogram(
+    mel_spec: np.ndarray, target_frames: int = TARGET_FRAMES, overlap: float = OVERLAP
+) -> List[np.ndarray]:
+    """
+    Segmenta un espectrograma completo en ventanas overlapping.
+
+    Args:
+        mel_spec: Espectrograma completo (n_mels, T_total)
+        target_frames: Frames por segmento
+        overlap: Overlap ratio (0.5 = 50%)
+
+    Returns:
+        Lista de espectrogramas segmentados (n_mels, target_frames)
+    """
+    n_mels, total_frames = mel_spec.shape
+    hop_frames = int(target_frames * (1 - overlap))
+
+    segments = []
+    for start in range(0, total_frames - target_frames + 1, hop_frames):
+        segment = mel_spec[:, start : start + target_frames]
+
+        # Ajustar si es necesario
+        if segment.shape[1] != target_frames:
+            segment = librosa.util.fix_length(segment, size=target_frames, axis=1)
+
+        segments.append(segment)
+
+    return segments
 
 
 def preprocess_audio_paper(

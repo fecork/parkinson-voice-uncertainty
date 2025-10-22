@@ -7,7 +7,7 @@ import torch
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from pathlib import Path
 
-from .uncertainty_loss import (
+from .loss import (
     heteroscedastic_classification_loss,
     compute_nll,
     compute_brier_score,

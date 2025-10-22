@@ -21,27 +21,27 @@ import torch.optim as optim
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Importar módulos propios - REUTILIZAMOS PIPELINE EXISTENTE
-from modules.dataset import build_full_pipeline
-from modules.cnn_utils import (
+from modules.core.dataset import build_full_pipeline
+from modules.models.cnn2d.utils import (
     split_by_speaker,
     create_dataloaders_from_existing,
     compute_class_weights_from_dataset,
 )
-from modules.cnn_model import CNN2D, print_model_summary
-from modules.cnn_training import (
+from modules.models.cnn2d.model import CNN2D, print_model_summary
+from modules.models.cnn2d.training import (
     train_model,
     detailed_evaluation,
     print_evaluation_report,
     save_training_results,
 )
-from modules.cnn_inference import (
+from modules.models.cnn2d.inference import (
     mc_dropout_inference,
     aggregate_by_file,
     aggregate_by_patient,
     analyze_uncertainty,
     print_inference_report,
 )
-from modules.cnn_visualization import generate_visual_report
+from modules.models.cnn2d.visualization import generate_visual_report
 
 
 # ============================================================

@@ -1046,7 +1046,7 @@ def train_model_da_kfold(
         Dict con métricas agregadas de todos los folds
     """
     from torch.utils.data import DataLoader, Subset
-    from modules.cnn_utils import (
+    from .utils import (
         create_10fold_splits_by_speaker,
         compute_class_weights_auto,
     )

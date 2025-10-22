@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from .cnn_model import enable_dropout
+from .model import enable_dropout
 
 
 # ============================================================

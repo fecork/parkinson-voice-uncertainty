@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import torch
-from modules.dataset import build_full_pipeline
+from modules.core.dataset import build_full_pipeline
 
 # Configuración
 HC_DIR = "data/vowels_healthy"

@@ -20,21 +20,24 @@ from sklearn.metrics import confusion_matrix
 # Agregar módulos al path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from modules.augmentation import create_augmented_dataset
-from modules.dataset import to_pytorch_tensors
-from modules.uncertainty_model import UncertaintyCNN, print_uncertainty_model_summary
-from modules.uncertainty_training import (
+from modules.data.augmentation import create_augmented_dataset
+from modules.core.dataset import to_pytorch_tensors
+from modules.models.uncertainty.model import (
+    UncertaintyCNN,
+    print_uncertainty_model_summary,
+)
+from modules.models.uncertainty.training import (
     train_uncertainty_model,
     evaluate_with_uncertainty,
     print_uncertainty_results,
 )
-from modules.uncertainty_visualization import (
+from modules.models.uncertainty.visualization import (
     plot_uncertainty_histograms,
     plot_reliability_diagram,
     plot_uncertainty_scatter,
     plot_training_history_uncertainty,
 )
-from modules.cnn_utils import plot_confusion_matrix
+from modules.models.cnn2d.utils import plot_confusion_matrix
 
 
 class DictDataset(Dataset):
@@ -67,8 +70,7 @@ def main():
     CACHE_DIR_HEALTHY = "./cache/healthy"
     CACHE_DIR_PARKINSON = "./cache/parkinson"
 
-    # Augmentation config
-    AUGMENTATION_TYPES = ["original", "pitch_shift", "time_stretch", "noise"]
+    # Augmentation config (SIMPLIFICADO - solo SpecAugment)
     NUM_SPEC_AUGMENT_VERSIONS = 2
 
     # Model config
@@ -117,7 +119,6 @@ def main():
     audio_files_healthy = list(Path(DATA_PATH_HEALTHY).glob("*.egg"))
     augmented_dataset_healthy = create_augmented_dataset(
         audio_files_healthy,
-        augmentation_types=AUGMENTATION_TYPES,
         apply_spec_augment=True,
         num_spec_augment_versions=NUM_SPEC_AUGMENT_VERSIONS,
         use_cache=True,
@@ -131,7 +132,6 @@ def main():
     audio_files_parkinson = list(Path(DATA_PATH_PARKINSON).glob("*.egg"))
     augmented_dataset_parkinson = create_augmented_dataset(
         audio_files_parkinson,
-        augmentation_types=AUGMENTATION_TYPES,
         apply_spec_augment=True,
         num_spec_augment_versions=NUM_SPEC_AUGMENT_VERSIONS,
         use_cache=True,

@@ -1,35 +1,115 @@
-# 🎵 Detección de Parkinson mediante Análisis de Voz
+# Detección de Parkinson mediante Análisis de Voz
 
-Sistema de clasificación binaria (Healthy vs Parkinson) usando redes neuronales convolucionales 2D sobre espectrogramas Mel de señales de voz.
+Sistema de clasificación binaria (Healthy vs Parkinson) usando redes neuronales convolucionales (CNN2D, CNN1D, LSTM) sobre espectrogramas Mel de señales de voz.
+
+**Implementación exacta según Ibarra et al. (2023)**: Preprocesamiento sin augmentation, espectrogramas individuales reutilizables para CNN2D y Time-CNN-LSTM.
 
 ---
 
-## 📋 Índice
+## Índice
 
 1. [Resumen del Proyecto](#resumen-del-proyecto)
-2. [Estructura del Proyecto](#estructura-del-proyecto)
-3. [Flujo de Trabajo](#flujo-de-trabajo)
-4. [Notebooks Disponibles](#notebooks-disponibles)
-5. [Pipelines Automatizados](#pipelines-automatizados)
-6. [Instalación y Configuración](#instalación-y-configuración)
-7. [Resultados](#resultados)
+2. [Preprocesamiento (Paper Ibarra 2023)](#preprocesamiento-paper-ibarra-2023)
+3. [Estructura del Proyecto](#estructura-del-proyecto)
+4. [Flujo de Trabajo](#flujo-de-trabajo)
+5. [Notebooks Disponibles](#notebooks-disponibles)
+6. [Pipelines Automatizados](#pipelines-automatizados)
+7. [Instalación y Configuración](#instalación-y-configuración)
+8. [Resultados](#resultados)
 
 ---
 
-## 🎯 Resumen del Proyecto
+## Resumen del Proyecto
 
 ### Objetivo
 Clasificar automáticamente señales de voz para detectar Parkinson usando técnicas de Deep Learning.
 
 ### Metodología
-- **Preprocesamiento**: Resampling, segmentación, Mel spectrograms
-- **Data Augmentation**: Pitch shift, time stretch, noise, SpecAugment
+Implementación fiel al paper de Ibarra et al. (2023):
+- **Preprocesamiento exacto**: Sin augmentation, según especificaciones del paper
 - **Modelos**:
   - **CNN2D**: Modelo baseline sin Domain Adaptation
   - **CNN2D_DA**: Modelo con Domain Adaptation y Gradient Reversal Layer (GRL)
+  - **CNN1D_DA**: CNN 1D con atención temporal y Domain Adaptation
+  - **Time-CNN-BiLSTM-DA**: CNN time-distributed + BiLSTM con Domain Adaptation
 
-### Implementación
-Basado en el paper: **Ibarra et al. (2023)** - "Towards a Corpus (and Language)-Independent Screening of Parkinson's Disease from Voice and Speech through Domain Adaptation"
+### Referencia
+Paper: **Ibarra et al. (2023)** - "Towards a Corpus (and Language)-Independent Screening of Parkinson's Disease from Voice and Speech through Domain Adaptation"
+
+---
+
+## Preprocesamiento (Paper Ibarra 2023)
+
+Pipeline exacto sin augmentation:
+
+### 1. Resample a 44.1 kHz
+Todos los audios se resamplea a frecuencia estándar de 44100 Hz (cuando aplique).
+
+### 2. Normalización por amplitud máxima absoluta
+```python
+audio = audio / np.max(np.abs(audio))
+```
+
+### 3. Segmentación: 400ms ventanas, 50% overlap
+- **Duración ventana**: 400 ms
+- **Overlap**: 50%
+- **Hop**: 200 ms
+
+### 4. Mel Spectrogram: 65 bandas, ventana FFT 40ms, hop 10ms
+- **Bandas Mel**: 65
+- **Ventana FFT**: 40 ms (para vocales sostenidas)
+- **Hop length**: 10 ms
+- **Frecuencia máxima**: Nyquist (22.05 kHz)
+
+### 5. Conversión a dB
+```python
+mel_db = librosa.power_to_db(mel_spec, ref=np.max)
+```
+
+### 6. Normalización z-score por espectrograma individual
+```python
+normalized = (mel_db - mean(mel_db)) / std(mel_db)
+```
+
+### 7. Dimensión final: 65×41 píxeles
+- **Altura**: 65 bandas Mel (frecuencia)
+- **Ancho**: 41 frames temporales
+
+### 8. Sin augmentation (Paper Exacto)
+El paper NO menciona data augmentation. Solo el preprocesamiento descrito arriba.
+
+**IMPORTANTE**: Este preprocesamiento (sin augmentation) se usa en:
+- `cnn_da_training.ipynb` (CNN2D con Domain Adaptation)
+- `cnn1d_da_training.ipynb` (CNN1D)
+- `time_cnn_lstm_training.ipynb` (Time-CNN-BiLSTM)
+
+### 9. Data Augmentation (Solo para Baseline)
+
+Para el modelo baseline CNN2D (`cnn_training.ipynb`), se aplica augmentation adicional para mejorar generalización:
+
+**Augmentation de audio**:
+- Pitch shifting: ±2 semitonos
+- Time stretching: 0.9x - 1.1x
+- Noise injection: factor 0.005
+
+**Augmentation de espectrograma**:
+- SpecAugment: máscaras de frecuencia (param=10) y tiempo (param=5)
+
+**Factor**: ~5x más datos
+
+**Cache separado**: `cache/healthy_augmented.pkl` y `cache/parkinson_augmented.pkl`
+
+### Uso de espectrogramas
+
+#### Para CNN2D:
+- **Input**: Un espectrograma (1, 65, 41) por vez
+- **Evaluación**: Probabilidad conjunta agrupando predicciones de todos los espectrogramas del mismo paciente
+
+#### Para Time-CNN-LSTM:
+- **Input**: Secuencia de n espectrogramas consecutivos (n, 1, 65, 41) del mismo audio
+- **Padding**: Zero-padding cuando hay menos de n frames
+- **Masking**: LSTM ignora frames con padding
+- **Hiperparámetro n**: Probar con {3, 5, 7, 9} según paper
 
 ---
 
@@ -46,21 +126,44 @@ parkinson-voice-uncertainty/
 ├── 🚀 pipelines/                      ← Scripts automatizados
 │   ├── README.md                      ← Documentación
 │   ├── train_cnn.py                   ← Pipeline CNN2D + MC Dropout
-│   └── train_cnn_da_kfold.py         ← Pipeline CNN2D_DA + K-fold
+│   ├── train_cnn_da_kfold.py         ← Pipeline CNN2D_DA + K-fold
+│   ├── train_cnn_uncertainty.py      ← Pipeline con incertidumbre
+│   └── train_lstm_da_kfold.py        ← Pipeline LSTM-DA + K-fold (NUEVO)
 │
-├── 📦 modules/                        ← Código compartido
+├── 📦 modules/                        ← Código compartido (REORGANIZADO v4.0)
 │   ├── __init__.py
-│   ├── augmentation.py                ← Data augmentation
-│   ├── cache_utils.py                 ← Gestión de cache
-│   ├── cnn_inference.py               ← Inferencia con MC Dropout
-│   ├── cnn_model.py                   ← CNN2D y CNN2D_DA
-│   ├── cnn_training.py                ← Funciones de entrenamiento
-│   ├── cnn_utils.py                   ← Utilidades
-│   ├── cnn_visualization.py           ← Visualizaciones
-│   ├── dataset.py                     ← Gestión de datasets
-│   ├── preprocessing.py               ← Preprocesamiento
-│   ├── utils.py                       ← Utilidades generales
-│   └── visualization.py               ← Visualizaciones generales
+│   ├── core/                          ← Módulos base
+│   │   ├── dataset.py                 ← Gestión de datasets
+│   │   ├── sequence_dataset.py        ← Secuencias para LSTM (NUEVO)
+│   │   ├── preprocessing.py           ← Preprocesamiento
+│   │   ├── utils.py                   ← Utilidades generales
+│   │   └── visualization.py           ← Visualizaciones generales
+│   ├── data/                          ← Manejo de datos
+│   │   ├── augmentation.py            ← Data augmentation
+│   │   └── cache_utils.py             ← Gestión de cache
+│   └── models/                        ← Modelos de ML
+│       ├── common/                    ← Componentes compartidos (NUEVO)
+│       │   ├── __init__.py            ← Exports
+│       │   └── layers.py              ← FeatureExtractor, GRL, ClassifierHead
+│       ├── cnn2d/                     ← CNN 2D
+│       │   ├── model.py               ← CNN2D y CNN2D_DA
+│       │   ├── training.py            ← Entrenamiento
+│       │   ├── inference.py           ← Inferencia MC Dropout
+│       │   ├── visualization.py       ← Visualizaciones
+│       │   └── utils.py               ← Utilidades CNN2D
+│       ├── cnn1d/                     ← CNN 1D
+│       │   ├── model.py               ← CNN1D_DA
+│       │   ├── training.py            ← Entrenamiento
+│       │   └── visualization.py       ← Visualizaciones
+│       ├── lstm_da/                   ← Time-CNN-BiLSTM (NUEVO)
+│       │   ├── model.py               ← TimeCNNBiLSTM_DA
+│       │   ├── training.py            ← Entrenamiento + K-fold
+│       │   └── visualization.py       ← Visualizaciones
+│       └── uncertainty/               ← Modelos con incertidumbre
+│           ├── model.py               ← UncertaintyCNN
+│           ├── loss.py                ← Heteroscedastic loss
+│           ├── training.py            ← Entrenamiento
+│           └── visualization.py       ← Visualizaciones
 │
 ├── 💾 cache/                          ← Datos preprocesados
 │   ├── healthy/
@@ -81,57 +184,97 @@ parkinson-voice-uncertainty/
 
 ---
 
-## 🔄 Flujo de Trabajo
+## Flujo de Trabajo
 
-### 📊 Diagrama de Flujo
+### Diagrama de Flujo
 
 ```
-┌─────────────────────────────────────┐
-│ Paso 1: data_preprocessing.ipynb   │
-│ Ejecutar UNA VEZ                    │
-│ ⏱️  7-10 minutos                     │
-│ ↓                                   │
-│ Genera cache/ con datos augmentados │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│ Paso 1: data_preprocessing.ipynb            │
+│ Ejecutar UNA VEZ                             │
+│ ⏱️  2-3 minutos (sin augmentation)           │
+│ ↓                                            │
+│ Genera cache/*_ibarra.pkl (65×41 píxeles)   │
+└──────────────────────────────────────────────┘
               ↓
-    ┌─────────┴─────────┐
-    ↓                   ↓
-┌─────────────┐   ┌──────────────────┐
-│ Paso 2A:    │   │ Paso 2B:         │
-│ CNN2D       │   │ CNN2D_DA         │
-│ (baseline)  │   │ (domain adapt)   │
-│             │   │                  │
-│ cnn_        │   │ cnn_da_          │
-│ training    │   │ training         │
-│ .ipynb      │   │ .ipynb           │
-│             │   │                  │
-│ ⏱️ 10-15 min │   │ ⏱️ 15-20 min     │
-└─────────────┘   └──────────────────┘
-    ↓                   ↓
-results/          results/
-cnn_no_da/        cnn_da/
-    ↓                   ↓
-    └───────────┬───────┘
-                ↓
-        3. Comparar
-           Resultados
+    ┌─────────┴─────────────┐
+    ↓                       ↓
+┌────────────────┐   ┌─────────────────────┐
+│ Paso 2A:       │   │ Paso 2B:            │
+│ CNN2D          │   │ CNN2D_DA            │
+│ (con augment)  │   │ (sin augment)       │
+│                │   │                     │
+│ cnn_training   │   │ cnn_da_training     │
+│                │   │                     │
+│ Genera cache   │   │ Usa cache ibarra    │
+│ *_augmented    │   │ (paper exacto)      │
+│ (~5x datos)    │   │                     │
+│                │   │                     │
+│ ⏱️ 15-20 min    │   │ ⏱️ 10-15 min         │
+└────────────────┘   └─────────────────────┘
+    ↓                       ↓
+results/              results/
+cnn_no_da/            cnn_da/
+(con augment)         (sin augment)
+    ↓                       ↓
+    └───────────────┬───────┘
+                    ↓
+            3. Comparar
+               Resultados
 ```
 
-### ⚡ Quick Start
+### Estrategia de Augmentation
+
+**SIN Augmentation (Paper Exacto)**:
+- `data_preprocessing.ipynb` → `cache/*_ibarra.pkl`
+- Usado por: `cnn_da_training.ipynb`, `cnn1d_da_training.ipynb`, `time_cnn_lstm_training.ipynb`
+- Objetivo: Seguir paper de Ibarra et al. (2023) exactamente
+
+**CON Augmentation (Mejora Generalización)**:
+- `cnn_training.ipynb` genera automáticamente → `cache/*_augmented.pkl`
+- Usado solo por: `cnn_training.ipynb`
+- Objetivo: Mejorar robustez del modelo baseline con más datos
+
+| Notebook | Augmentation | Cache | Propósito |
+|----------|--------------|-------|-----------|
+| `cnn_training.ipynb` | ✅ SÍ | `*_augmented.pkl` | Baseline robusto |
+| `cnn_da_training.ipynb` | ❌ NO | `*_ibarra.pkl` | Paper exacto |
+| Otros notebooks | ❌ NO | `*_ibarra.pkl` | Paper exacto |
+
+### Quick Start
 
 ```bash
-# Primera vez (setup completo):
-jupyter notebook data_preprocessing.ipynb  # 1. Generar cache (~7-10 min)
+# Primera vez (validar preprocesamiento):
+python test/test_ibarra_preprocessing.py  # Validar que cumple paper
+
+# Generar datos preprocesados:
+jupyter notebook data_preprocessing.ipynb  # 1. Generar cache (~2-3 min)
+
+# Entrenar modelos:
 jupyter notebook cnn_training.ipynb        # 2A. Baseline (~10-15 min)
 jupyter notebook cnn_da_training.ipynb     # 2B. Domain Adapt (~15-20 min)
 
-# Experimentación (cache ya existe):
-jupyter notebook cnn_training.ipynb        # Modificar hiperparámetros y ejecutar
-
-# Producción (automatizado):
+# Pipelines automatizados:
 python pipelines/train_cnn.py --lr 0.001
 python pipelines/train_cnn_da_kfold.py --n_folds 10
+python pipelines/train_lstm_da_kfold.py --n_frames 7 --lstm_units 64
 ```
+
+### Validación del Preprocesamiento
+
+Ejecutar pruebas unitarias para verificar cumplimiento del paper:
+
+```bash
+python test/test_ibarra_preprocessing.py
+```
+
+Las pruebas validan:
+- ✅ Constantes (SAMPLE_RATE=44100, N_MELS=65, etc.)
+- ✅ Normalización por max-abs
+- ✅ Segmentación 400ms con 50% overlap
+- ✅ Dimensiones finales 65×41
+- ✅ Normalización z-score
+- ✅ Sin augmentation (reproducibilidad)
 
 ---
 
@@ -139,39 +282,51 @@ python pipelines/train_cnn_da_kfold.py --n_folds 10
 
 ### 1️⃣ `data_preprocessing.ipynb`
 
-**Propósito**: Generar cache de datos preprocesados y augmentados
+**Propósito**: Generar cache de espectrogramas preprocesados según Ibarra et al. (2023)
 
 **Ejecutar**: UNA VEZ (o cuando cambies parámetros de preprocesamiento)
 
 **Contenido**:
-- 🔊 Visualización de audio raw
-- 🎵 Preprocesamiento (resampling, segmentación, Mel spectrograms)
-- 🎨 Data augmentation (pitch shift, time stretch, noise, SpecAugment)
-- 💾 Generación de cache
+- Visualización de audio raw
+- Preprocesamiento exacto según paper (sin augmentation):
+  - Resample 44.1 kHz + normalización max-abs
+  - Segmentación 400ms con 50% overlap
+  - Mel spectrograms: 65 bandas, FFT 40ms, hop 10ms
+  - Conversión a dB + z-score individual
+- Generación y guardado de cache
+- Espectrogramas individuales (65×41) reutilizables para CNN2D y Time-CNN-LSTM
 
 **Output**:
 ```
 cache/
-├── healthy/augmented_dataset_*.pkl (~1553 muestras)
-└── parkinson/augmented_dataset_*.pkl (~1219 muestras)
+├── healthy_ibarra.pkl     (~50-80 espectrogramas)
+└── parkinson_ibarra.pkl   (~50-80 espectrogramas)
 ```
 
-**Tiempo**: ~7-10 minutos
+**Tiempo**: ~2-3 minutos (sin augmentation, más rápido)
 
 ---
 
 ### 2️⃣ `cnn_training.ipynb`
 
-**Propósito**: Entrenar modelo CNN2D baseline sin Domain Adaptation
+**Propósito**: Entrenar modelo CNN2D baseline CON augmentation
 
-**Prerequisito**: ⚠️ Cache generado (ejecutar `data_preprocessing.ipynb` primero)
+**Prerequisito**: Tener archivos de audio en `data/`
 
 **Contenido**:
-- 📁 Carga cache (~5 segundos)
-- 📊 Split train/val/test (70/15/15)
-- 🏗️ Modelo CNN2D con backbone Ibarra (sin DA)
-- 🚀 Entrenamiento con Adam + early stopping
-- 📈 Evaluación y visualización
+- Carga/genera espectrogramas CON augmentation:
+  - Pitch shifting
+  - Time stretching
+  - Noise injection
+  - SpecAugment
+- Factor: ~5x más datos (mejora generalización)
+- Split train/val/test (70/15/15)
+- Modelo CNN2D con backbone Ibarra (sin DA)
+- Input: un espectrograma (1, 65, 41) por vez
+- Entrenamiento con Adam + early stopping
+- Evaluación y visualización
+
+**Nota**: Este es el ÚNICO notebook que usa augmentation. El objetivo es mejorar la generalización del modelo baseline.
 
 **Output**:
 ```
@@ -188,16 +343,19 @@ results/cnn_no_da/
 
 ### 3️⃣ `cnn_da_training.ipynb`
 
-**Propósito**: Entrenar modelo CNN2D_DA con Domain Adaptation
+**Propósito**: Entrenar modelo CNN2D_DA con Domain Adaptation (según paper exacto)
 
-**Prerequisito**: ⚠️ Cache generado (ejecutar `data_preprocessing.ipynb` primero)
+**Prerequisito**: Cache generado (ejecutar `data_preprocessing.ipynb` primero)
 
 **Contenido**:
-- 📁 Carga cache (~5 segundos)
-- 📊 Split train/val/test (70/15/15)
-- 🏗️ Modelo CNN2D_DA (dual-head con GRL)
-- 🚀 Entrenamiento multi-task con SGD
-- 📈 Evaluación PD + Domain
+- Carga cache de espectrogramas SIN augmentation (paper exacto)
+- Split train/val/test (70/15/15)
+- Modelo CNN2D_DA (dual-head con GRL)
+- Input: un espectrograma (1, 65, 41) por vez
+- Entrenamiento multi-task con SGD
+- Evaluación PD + Domain
+
+**Nota**: Este notebook sigue el paper de Ibarra et al. (2023) exactamente (sin augmentation).
 
 **Output**:
 ```
@@ -241,6 +399,30 @@ python pipelines/train_cnn_da_kfold.py --n_folds 10
 - Entrenamiento automatizado CNN2D_DA
 - K-fold cross-validation (10-fold por defecto)
 - Implementación según Ibarra (2023)
+
+---
+
+### `pipelines/train_lstm_da_kfold.py` (NUEVO)
+
+Pipeline completo para entrenar Time-CNN-BiLSTM-DA con validación cruzada:
+
+```bash
+python pipelines/train_lstm_da_kfold.py --n_frames 7 --lstm_units 64 --n_folds 10
+```
+
+**Características**:
+- Entrenamiento automatizado Time-CNN-BiLSTM-DA
+- Procesa secuencias de n espectrogramas (n=7, 9)
+- BiLSTM con masking para secuencias de longitud variable
+- K-fold cross-validation speaker-independent
+- Lambda warm-up para GRL (0→1 en 5 épocas)
+- SGD con momentum 0.9, LR scheduler StepLR
+- Implementación según Ibarra (2023)
+
+**Argumentos principales**:
+- `--n_frames`: Número de frames por secuencia (default: 7, paper sugiere: 3, 5, 7, 9)
+- `--lstm_units`: Unidades LSTM por dirección (default: 64, paper sugiere: 16, 32, 64)
+- `--lambda_warmup`: Épocas de warm-up para lambda GRL (default: 5)
 
 ---
 
@@ -288,10 +470,12 @@ data/
 
 ### Comparación de Modelos
 
-| Modelo | Accuracy | F1-Score | Parámetros |
-|--------|----------|----------|------------|
-| CNN2D (baseline) | ~98.8% | ~98.8% | 674,562 |
-| CNN2D_DA (con GRL) | TBD | TBD | ~800,000+ |
+| Modelo | Accuracy | F1-Score | Parámetros | Tipo |
+|--------|----------|----------|------------|------|
+| CNN2D (baseline) | ~98.8% | ~98.8% | 674,562 | Sin DA |
+| CNN2D_DA (con GRL) | TBD | TBD | ~800,000+ | Con DA |
+| CNN1D_DA | TBD | TBD | ~350,000+ | Con DA |
+| Time-CNN-BiLSTM-DA | TBD | TBD | ~950,000+ | Con DA + Temporal |
 
 ### ⚠️ Diferencias Arquitectónicas Importantes
 
@@ -369,6 +553,10 @@ CNN2D_DA: (B, 64, 17, 11) → Flatten → (B, 11,968)
 | **GRL** | Gradient Reversal Layer |
 | **MC Dropout** | Monte Carlo Dropout (cuantificación de incertidumbre) |
 | **K-fold** | Validación cruzada en K particiones |
+| **BiLSTM** | Bidirectional Long Short-Term Memory |
+| **Time-distributed** | Aplicar mismas capas a cada frame de secuencia |
+| **Masking** | Ignorar frames de padding en cálculos |
+| **Lambda warm-up** | Incremento gradual de lambda GRL durante entrenamiento |
 
 ---
 
@@ -420,14 +608,22 @@ LEARNING_RATE = 5e-4
 
 ## 🔧 Configuración de Parámetros
 
-### Preprocesamiento (en `modules/preprocessing.py`)
+### Preprocesamiento (en `modules/core/preprocessing.py`)
 
 ```python
-SAMPLE_RATE = 16000      # Hz
-WINDOW_MS = 100          # ms
+SAMPLE_RATE = 44100      # Hz (actualizado desde 16k)
+WINDOW_MS = 400          # ms
 OVERLAP = 0.5            # 50%
 N_MELS = 65              # Bandas Mel
 TARGET_FRAMES = 41       # Frames por espectrograma
+```
+
+### Secuencias LSTM (en `modules/core/sequence_dataset.py`)
+
+```python
+N_FRAMES = 7             # Frames por secuencia
+MIN_FRAMES = 3           # Mínimo de frames para crear secuencia
+NORMALIZE = True         # Normalizar POR SECUENCIA (no por frame)
 ```
 
 ### Data Augmentation
@@ -458,6 +654,18 @@ N_EPOCHS = 100
 LEARNING_RATE = 0.1      # SGD según Ibarra
 ALPHA = 1.0              # Peso de loss_domain
 LAMBDA_CONSTANT = 1.0    # Lambda para GRL
+```
+
+### Entrenamiento Time-CNN-BiLSTM-DA
+
+```python
+N_EPOCHS = 100
+N_FRAMES = 7             # Secuencia de frames (paper: 3, 5, 7, 9)
+LSTM_UNITS = 64          # Unidades por dirección (paper: 16, 32, 64)
+LEARNING_RATE = 0.1      # SGD con momentum 0.9
+ALPHA = 1.0              # Peso de loss_domain
+LAMBDA_WARMUP = 5        # Épocas para warm-up de GRL (0→1)
+BATCH_SIZE = 32
 ```
 
 ---
@@ -504,19 +712,87 @@ Block2: Conv2D(64, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
 
 ---
 
+### Arquitectura Time-CNN-BiLSTM-DA (NUEVO)
+
+```
+Input: (B, T, 1, 65, 41)  donde T = n_frames (7, 9)
+↓
+[Time-Distributed Feature Extractor] (REUTILIZA FeatureExtractor de CNN2D)
+Para cada frame t en T:
+  Block1: Conv2D(32, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+  Block2: Conv2D(64, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+  Projection: Flatten → FC(128) → ReLU → Dropout
+↓
+Output: (B, T, 128) embeddings
+
+[BiLSTM Temporal con Masking]
+BiLSTM(128 → 64 bidirectional) con pack_padded_sequence
+↓
+Output: (B, T, 128) LSTM hidden states
+
+[Global Pooling Temporal]
+Mean pooling considerando solo frames válidos (no padding)
+↓
+Output: (B, 128) embedding global
+
+├─────────────────────────┬─────────────────────────┐
+│ [PD Head]               │ [Domain Head]           │
+│ FC(64) → ReLU → FC(2)   │ GRL → FC(64) → FC(4)    │
+│ ↓                       │ ↓                       │
+│ Healthy/Parkinson       │ Domain ID (4 corpus)    │
+└─────────────────────────┴─────────────────────────┘
+```
+
+**Ventajas del modelo**:
+- ✅ **No requiere post-proceso por paciente**: BiLSTM procesa toda la secuencia
+- ✅ **Masking automático**: Ignora frames de padding
+- ✅ **Reutiliza código**: FeatureExtractor compartido con CNN2D
+- ✅ **Modelado temporal**: BiLSTM captura dependencias entre frames
+- ✅ **Lambda warm-up**: GRL aumenta gradualmente (0→1 en 5 épocas)
+
+**Diferencias con CNN2D/CNN1D**:
+- CNN2D/CNN1D: Procesan espectrogramas individuales → post-proceso por paciente
+- LSTM-DA: Procesa secuencias completas → predicción directa por secuencia
+
+---
+
 ## 💡 Ventajas de la Organización Actual
 
-### ✅ Antes (Problemas)
-- ❌ Todo mezclado en un notebook gigante
-- ❌ Reprocesar datos en cada experimento (~6 min cada vez)
-- ❌ Scripts duplicando código de notebooks
-- ❌ Difícil saber qué ejecutar primero
+### ✅ Versión 4.0 - Código Compartido Centralizado (NUEVO)
 
-### ✅ Ahora (Soluciones)
-- ✅ Notebooks modulares (una responsabilidad por notebook)
-- ✅ Cache reutilizable (ahorro de ~6 min/experimento)
-- ✅ Scripts organizados en `pipelines/` (sin duplicación)
-- ✅ Flujo claro y documentado
+**Mejoras principales:**
+- 🎯 **modules/models/common/**: Componentes compartidos entre modelos
+  - `FeatureExtractor`: CNN 2D usado por CNN2D y LSTM-DA
+  - `GradientReversalLayer (GRL)`: Usado por CNN2D_DA, CNN1D_DA, LSTM-DA
+  - `ClassifierHead`: Cabeza de clasificación reutilizable
+- ✅ **Sin duplicación**: Un solo lugar para código compartido
+- 🔄 **Fácil mantenimiento**: Cambios en un lugar afectan todos los modelos
+- 📝 **Imports claros**: `from modules.models.common.layers import FeatureExtractor`
+
+### ✅ Versión 3.0 - Nueva Estructura Modular
+
+**Cambios principales:**
+- 📦 **Módulos reorganizados por funcionalidad**:
+  - `core/`: Módulos base compartidos (dataset, preprocessing, utils)
+  - `data/`: Manejo de datos (augmentation, cache)
+  - `models/`: Modelos organizados por tipo (cnn2d, cnn1d, lstm_da, uncertainty)
+  - `models/common/`: Componentes compartidos entre modelos
+- 🔄 **CNN renombrado a CNN2D** para claridad
+- 🎯 **Agrupación lógica**: Cada carpeta agrupa funcionalidad relacionada
+- 📝 **Imports simplificados**: `from modules.models.cnn2d import ...`
+
+### ✅ Antes (v2.0 - Problemas)
+- ❌ Archivos sueltos en `/modules`
+- ❌ `cnn_*.py` sin claridad si es 2D o 1D
+- ❌ Módulos de uncertainty, cnn1d y cnn2d mezclados
+- ❌ Difícil encontrar qué archivo modificar
+
+### ✅ Ahora (v3.0 - Soluciones)
+- ✅ Estructura jerárquica por funcionalidad
+- ✅ CNN2D claramente separado de CNN1D
+- ✅ Cada modelo tiene su carpeta con todo su código
+- ✅ Fácil navegar y mantener
+- ✅ Imports más descriptivos y organizados
 
 ---
 
@@ -641,16 +917,47 @@ test_metrics_da  # Métricas PD + Domain
 
 ---
 
+## 🧪 Tests de Validación
+
+### Suite de Tests para Secuencias LSTM
+
+**Archivo**: `test/test_lstm_sequences.py`  
+**Tests**: 14/14 pasando
+
+**Validaciones implementadas:**
+- ✅ Orden temporal (segment_id consecutivos)
+- ✅ Correlación entre frames adyacentes (>0.6)
+- ✅ Normalización por secuencia (no por frame)
+- ✅ Padding correcto (ceros + masking)
+- ✅ No mezcla de frames de diferentes audios
+- ✅ SpecAugment consistente (cuando aplica)
+- ✅ Compatibilidad con modelos LSTM
+
+**Ejecutar tests:**
+```bash
+python test/test_lstm_sequences.py
+# [PASS] TODOS LOS TESTS PASARON (14/14)
+```
+
+**Documentación detallada**: Ver `LSTM_SEQUENCE_IMPROVEMENTS.md`
+
+---
+
 ## 📖 Referencias
 
 **Paper Principal**:
 - Ibarra et al. (2023): "Towards a Corpus (and Language)-Independent Screening of Parkinson's Disease from Voice and Speech through Domain Adaptation"
 
+**Papers Relacionados**:
+- Park et al. (2019): "SpecAugment: A Simple Data Augmentation Method for ASR"
+- Kendall & Gal (2017): "What Uncertainties Do We Need in Bayesian Deep Learning..."
+
 **Técnicas Implementadas**:
 - Domain Adaptation con Gradient Reversal Layer (GRL)
 - Monte Carlo Dropout para cuantificación de incertidumbre
-- Data Augmentation (SpecAugment)
+- Data Augmentation (SpecAugment global para LSTM)
 - K-fold Cross-Validation
+- Normalización por secuencia para modelos temporales
 
 ---
 
@@ -678,8 +985,10 @@ Para preguntas o problemas:
 
 ---
 
-**Última actualización**: 2025-10-17
+**Última actualización**: 2025-10-21
 
-**Autor**: [Tu nombre/equipo]
+**Autor**: PHD Research Team
 
-**Versión**: 2.0 (Reorganización modular)
+**Versión**: 3.0 (Reorganización modular + Pipeline LSTM optimizado)
+
+**Tests**: 14/14 pasando en `test/test_lstm_sequences.py`

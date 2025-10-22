@@ -16,72 +16,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Tuple
 
-
-# ============================================================
-# GRADIENT REVERSAL LAYER (reutilizado de cnn_model.py)
-# ============================================================
-
-
-class GradientReversalFunction(torch.autograd.Function):
-    """
-    Función para inversión de gradiente (Gradient Reversal Layer).
-
-    Durante forward: pasa x sin cambios
-    Durante backward: invierte el gradiente y lo multiplica por lambda
-
-    Reference:
-        Ganin & Lempitsky (2015)
-        "Unsupervised Domain Adaptation by Backpropagation"
-    """
-
-    @staticmethod
-    def forward(ctx, x, lambda_):
-        """Forward pass - identidad."""
-        ctx.lambda_ = lambda_
-        return x.view_as(x)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        """Backward pass - invierte gradiente."""
-        return grad_output.neg() * ctx.lambda_, None
-
-
-class GradientReversalLayer(nn.Module):
-    """
-    Gradient Reversal Layer (GRL) para Domain Adaptation.
-
-    Invierte los gradientes durante backpropagation para hacer
-    las features invariantes al dominio.
-    """
-
-    def __init__(self, lambda_: float = 1.0):
-        """
-        Args:
-            lambda_: Factor inicial de inversión (default: 1.0)
-        """
-        super().__init__()
-        self.lambda_ = lambda_
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass.
-
-        Args:
-            x: Input tensor
-
-        Returns:
-            Output tensor (idéntico a input en forward)
-        """
-        return GradientReversalFunction.apply(x, self.lambda_)
-
-    def set_lambda(self, lambda_: float):
-        """Actualiza el factor lambda."""
-        self.lambda_ = lambda_
+# Importar GRL desde módulo compartido
+from ..common.layers import (
+    GradientReversalFunction,
+    GradientReversalLayer,
+)
 
 
 # ============================================================
 # CNN 1D CON DOMAIN ADAPTATION
 # ============================================================
+
+# NOTA: GRL ahora se importa desde modules/models/common/layers.py
+# para reutilización entre todos los modelos
 
 
 class CNN1D_DA(nn.Module):

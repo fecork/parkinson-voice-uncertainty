@@ -13,7 +13,7 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 
-from .cnn_model import GradCAM, get_last_conv_layer
+from .model import GradCAM, get_last_conv_layer
 
 
 # ============================================================
