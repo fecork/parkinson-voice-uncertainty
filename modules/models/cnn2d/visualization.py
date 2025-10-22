@@ -5,7 +5,7 @@ Visualizaciones para análisis: Grad-CAM, incertidumbre, métricas.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -546,6 +546,353 @@ def generate_visual_report(
 
     print(f"\n✅ Reporte visual completo guardado en: {save_dir}")
     print("=" * 70 + "\n")
+
+
+# ============================================================
+# AUGMENTATION VISUALIZATIONS
+# ============================================================
+
+
+def visualize_augmented_samples(
+    dataset: List[Dict],
+    num_samples: int = 3,
+    title: str = "Espectrogramas",
+    save_path: Optional[Path] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Visualiza muestras de un dataset con diferentes tipos de augmentation.
+
+    Args:
+        dataset: Lista de muestras con información de augmentation
+        num_samples: Número de muestras a mostrar
+        title: Título de la figura
+        save_path: Ruta para guardar la figura
+        show: Si True, muestra la figura
+
+    Returns:
+        Figura de matplotlib
+    """
+    # Filtrar muestras por tipo de augmentation
+    original_samples = [s for s in dataset if s.get("augmentation") == "original"]
+    spec_aug_samples = [
+        s for s in dataset if s.get("augmentation", "").startswith("spec_aug")
+    ]
+
+    # Seleccionar muestras para visualizar
+    samples_to_show = []
+
+    # Agregar original
+    if original_samples:
+        samples_to_show.append(("Original", original_samples[0]))
+
+    # Agregar SpecAugment
+    if spec_aug_samples:
+        for i, sample in enumerate(spec_aug_samples[: num_samples - 1]):
+            samples_to_show.append((f"SpecAug v{i + 1}", sample))
+
+    # Crear subplots
+    n_samples = len(samples_to_show)
+    fig, axes = plt.subplots(2, n_samples, figsize=(4 * n_samples, 8))
+    if n_samples == 1:
+        axes = axes.reshape(2, 1)
+
+    for i, (label, sample) in enumerate(samples_to_show):
+        spectrogram = sample["spectrogram"]
+
+        # Espectrograma original
+        axes[0, i].imshow(spectrogram, aspect="auto", origin="lower", cmap="viridis")
+        axes[0, i].set_title(f"{label}\n{spectrogram.shape}")
+        axes[0, i].set_xlabel("Frames temporales")
+        axes[0, i].set_ylabel("Bandas de frecuencia")
+
+        # Perfil de frecuencia promedio
+        freq_profile = np.mean(spectrogram, axis=1)
+        axes[1, i].plot(freq_profile)
+        axes[1, i].set_title("Perfil de frecuencia promedio")
+        axes[1, i].set_xlabel("Bandas de frecuencia")
+        axes[1, i].set_ylabel("Amplitud")
+        axes[1, i].grid(True, alpha=0.3)
+
+    plt.suptitle(title, fontsize=14, fontweight="bold")
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"💾 Guardado: {save_path}")
+
+    if show:
+        plt.show()
+
+    return fig
+
+
+def compare_healthy_vs_parkinson(
+    dataset_healthy: List[Dict],
+    dataset_parkinson: List[Dict],
+    num_examples: int = 2,
+    save_path: Optional[Path] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Compara visualmente muestras de Healthy vs Parkinson con SpecAugment.
+
+    Args:
+        dataset_healthy: Dataset de muestras healthy
+        dataset_parkinson: Dataset de muestras parkinson
+        num_examples: Número de ejemplos por clase
+        save_path: Ruta para guardar la figura
+        show: Si True, muestra la figura
+
+    Returns:
+        Figura de matplotlib
+    """
+    # Obtener muestras originales de cada clase
+    healthy_original = [
+        s for s in dataset_healthy if s.get("augmentation") == "original"
+    ][:num_examples]
+    parkinson_original = [
+        s for s in dataset_parkinson if s.get("augmentation") == "original"
+    ][:num_examples]
+
+    # Obtener muestras con SpecAugment
+    healthy_specaug = [
+        s for s in dataset_healthy if s.get("augmentation", "").startswith("spec_aug")
+    ][:num_examples]
+    parkinson_specaug = [
+        s for s in dataset_parkinson if s.get("augmentation", "").startswith("spec_aug")
+    ][:num_examples]
+
+    # Crear figura
+    fig, axes = plt.subplots(4, num_examples, figsize=(5 * num_examples, 12))
+    if num_examples == 1:
+        axes = axes.reshape(4, 1)
+
+    # Títulos de filas
+    row_titles = [
+        "🟢 Healthy - Original",
+        "🟢 Healthy - SpecAugment",
+        "🔴 Parkinson - Original",
+        "🔴 Parkinson - SpecAugment",
+    ]
+
+    datasets = [
+        healthy_original,
+        healthy_specaug,
+        parkinson_original,
+        parkinson_specaug,
+    ]
+
+    for row, (title, samples) in enumerate(zip(row_titles, datasets)):
+        for col in range(num_examples):
+            if col < len(samples):
+                sample = samples[col]
+                spectrogram = sample["spectrogram"]
+
+                # Mostrar espectrograma
+                im = axes[row, col].imshow(
+                    spectrogram, aspect="auto", origin="lower", cmap="viridis"
+                )
+                axes[row, col].set_title(
+                    f"{title}\n{sample.get('filename', 'Unknown')}"
+                )
+                axes[row, col].set_xlabel("Frames temporales")
+                axes[row, col].set_ylabel("Bandas de frecuencia")
+
+                # Agregar colorbar
+                plt.colorbar(im, ax=axes[row, col], fraction=0.046, pad=0.04)
+            else:
+                axes[row, col].axis("off")
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"💾 Guardado: {save_path}")
+
+    if show:
+        plt.show()
+
+    return fig
+
+
+def analyze_specaugment_effects(
+    dataset: List[Dict],
+    class_name: str,
+    num_examples: int = 3,
+    save_path: Optional[Path] = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Analiza en detalle los efectos de SpecAugment.
+
+    Args:
+        dataset: Dataset con muestras augmentadas
+        class_name: Nombre de la clase (ej: "HEALTHY", "PARKINSON")
+        num_examples: Número de ejemplos SpecAugment a mostrar
+        save_path: Ruta para guardar la figura
+        show: Si True, muestra la figura
+
+    Returns:
+        Figura de matplotlib
+    """
+    # Obtener muestra original
+    original_samples = [s for s in dataset if s.get("augmentation") == "original"]
+    if not original_samples:
+        raise ValueError("No se encontraron muestras originales en el dataset")
+
+    original_sample = original_samples[0]
+    original_spec = original_sample["spectrogram"]
+
+    # Obtener muestras con SpecAugment
+    specaug_samples = [
+        s for s in dataset if s.get("augmentation", "").startswith("spec_aug")
+    ][:num_examples]
+
+    print(f"\n{class_name} - Análisis de SpecAugment:")
+    print(f"   • Muestra original: {original_sample.get('filename', 'Unknown')}")
+    print(f"   • Versiones SpecAugment: {len(specaug_samples)}")
+
+    # Crear figura
+    fig, axes = plt.subplots(2, num_examples + 1, figsize=(4 * (num_examples + 1), 8))
+
+    # Mostrar original
+    im = axes[0, 0].imshow(original_spec, aspect="auto", origin="lower", cmap="viridis")
+    axes[0, 0].set_title(f"Original\n{original_spec.shape}")
+    axes[0, 0].set_xlabel("Frames temporales")
+    axes[0, 0].set_ylabel("Bandas de frecuencia")
+    plt.colorbar(im, ax=axes[0, 0], fraction=0.046, pad=0.04)
+
+    # Mostrar perfil de frecuencia del original
+    freq_profile_orig = np.mean(original_spec, axis=1)
+    axes[1, 0].plot(freq_profile_orig, "b-", linewidth=2, label="Original")
+    axes[1, 0].set_title("Perfil de frecuencia promedio")
+    axes[1, 0].set_xlabel("Bandas de frecuencia")
+    axes[1, 0].set_ylabel("Amplitud")
+    axes[1, 0].grid(True, alpha=0.3)
+    axes[1, 0].legend()
+
+    # Mostrar versiones SpecAugment
+    for i, sample in enumerate(specaug_samples):
+        specaug_spec = sample["spectrogram"]
+        aug_label = sample.get("augmentation", "spec_aug")
+
+        # Espectrograma
+        im = axes[0, i + 1].imshow(
+            specaug_spec, aspect="auto", origin="lower", cmap="viridis"
+        )
+        axes[0, i + 1].set_title(f"{aug_label}\n{specaug_spec.shape}")
+        axes[0, i + 1].set_xlabel("Frames temporales")
+        axes[0, i + 1].set_ylabel("Bandas de frecuencia")
+        plt.colorbar(im, ax=axes[0, i + 1], fraction=0.046, pad=0.04)
+
+        # Perfil de frecuencia
+        freq_profile_aug = np.mean(specaug_spec, axis=1)
+        axes[1, i + 1].plot(
+            freq_profile_orig, "b-", linewidth=1, alpha=0.7, label="Original"
+        )
+        axes[1, i + 1].plot(freq_profile_aug, "r-", linewidth=2, label=aug_label)
+        axes[1, i + 1].set_title("Comparación de perfiles")
+        axes[1, i + 1].set_xlabel("Bandas de frecuencia")
+        axes[1, i + 1].set_ylabel("Amplitud")
+        axes[1, i + 1].grid(True, alpha=0.3)
+        axes[1, i + 1].legend()
+
+    plt.suptitle(f"Análisis SpecAugment - {class_name}", fontsize=14, fontweight="bold")
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"💾 Guardado: {save_path}")
+
+    if show:
+        plt.show()
+
+    return fig
+
+
+def quantify_specaugment_effects(dataset: List[Dict], class_name: str) -> Dict:
+    """
+    Cuantifica los efectos de SpecAugment.
+
+    Args:
+        dataset: Dataset con muestras augmentadas
+        class_name: Nombre de la clase
+
+    Returns:
+        Diccionario con estadísticas
+    """
+    original_samples = [s for s in dataset if s.get("augmentation") == "original"]
+    specaug_samples = [
+        s for s in dataset if s.get("augmentation", "").startswith("spec_aug")
+    ]
+
+    if not original_samples or not specaug_samples:
+        return {}
+
+    # Calcular estadísticas
+    orig_values = np.concatenate([s["spectrogram"].flatten() for s in original_samples])
+    specaug_values = np.concatenate(
+        [s["spectrogram"].flatten() for s in specaug_samples]
+    )
+
+    stats = {
+        "class_name": class_name,
+        "original_count": len(original_samples),
+        "specaug_count": len(specaug_samples),
+        "augmentation_factor": len(specaug_samples) / len(original_samples),
+        "original_mean": np.mean(orig_values),
+        "specaug_mean": np.mean(specaug_values),
+        "original_std": np.std(orig_values),
+        "specaug_std": np.std(specaug_values),
+        "mean_difference": abs(np.mean(orig_values) - np.mean(specaug_values)),
+        "std_difference": abs(np.std(orig_values) - np.std(specaug_values)),
+    }
+
+    print(f"\n{class_name}:")
+    print(f"   • Muestras originales: {stats['original_count']}")
+    print(f"   • Muestras SpecAugment: {stats['specaug_count']}")
+    print(f"   • Factor de aumento: {stats['augmentation_factor']:.1f}x")
+    print(f"   • Media original: {stats['original_mean']:.3f}")
+    print(f"   • Media SpecAugment: {stats['specaug_mean']:.3f}")
+    print(f"   • Diferencia en media: {stats['mean_difference']:.3f}")
+    print(f"   • Std original: {stats['original_std']:.3f}")
+    print(f"   • Std SpecAugment: {stats['specaug_std']:.3f}")
+    print(f"   • Diferencia en std: {stats['std_difference']:.3f}")
+
+    return stats
+
+
+def analyze_spectrogram_stats(dataset: List[Dict], label: str) -> Dict:
+    """
+    Analiza estadísticas de los espectrogramas.
+
+    Args:
+        dataset: Lista de muestras con espectrogramas
+        label: Etiqueta para mostrar en los resultados
+
+    Returns:
+        Diccionario con estadísticas calculadas
+    """
+    spectrograms = [s["spectrogram"] for s in dataset]
+
+    # Calcular estadísticas
+    all_values = np.concatenate([spec.flatten() for spec in spectrograms])
+
+    print(f"\n{label}:")
+    print(f"   • Número de espectrogramas: {len(spectrograms)}")
+    print(f"   • Shape típico: {spectrograms[0].shape}")
+    print(f"   • Media: {np.mean(all_values):.3f}")
+    print(f"   • Desviación estándar: {np.std(all_values):.3f}")
+    print(f"   • Min: {np.min(all_values):.3f}")
+    print(f"   • Max: {np.max(all_values):.3f}")
+
+    return {
+        "mean": np.mean(all_values),
+        "std": np.std(all_values),
+        "min": np.min(all_values),
+        "max": np.max(all_values),
+    }
 
 
 # ============================================================

@@ -364,16 +364,18 @@ def preprocess_audio_with_augmentation(
     spec_augment_params: Optional[dict] = None,
     spec_augment_before_segment: bool = True,
     skip_normalization: bool = False,
+    augmentation_type: str = "spec_augment",
 ):
     """
-    Pipeline de preprocesamiento SIMPLIFICADO - Solo SpecAugment.
+    Pipeline de preprocesamiento con augmentation configurable.
 
     PIPELINE ORDER:
     1. Load audio completo
-    2. Crear espectrograma (completo o por segmentos)
-    3. Aplicar SpecAugment (ÚNICO augmentation)
-    4. Segmentar si es necesario
-    5. Normalizar (opcional)
+    2. Aplicar augmentation de audio (si corresponde)
+    3. Crear espectrograma (completo o por segmentos)
+    4. Aplicar SpecAugment (si corresponde)
+    5. Segmentar si es necesario
+    6. Normalizar (opcional)
 
     Args:
         file_path: Path to audio file
@@ -385,6 +387,8 @@ def preprocess_audio_with_augmentation(
                                      de segmentar (DEFAULT para LSTM)
         skip_normalization: Si True, no normaliza
                            (útil para normalizar por secuencia)
+        augmentation_type: Tipo de augmentation a aplicar
+                          ("pitch_shift", "time_stretch", "noise", "spec_augment")
 
     Returns:
         spectrograms: List of Mel spectrograms
@@ -398,7 +402,24 @@ def preprocess_audio_with_augmentation(
     if audio is None:
         return None, None, None
 
-    aug_label = "original"
+    # 2. Aplicar augmentation de audio según tipo
+    if augmentation_type == "pitch_shift":
+        n_steps = np.random.uniform(-2, 2)
+        audio = pitch_shift(audio, sr=sr, n_steps=n_steps)
+        aug_label = "pitch_shift"
+    elif augmentation_type == "time_stretch":
+        rate = np.random.uniform(0.9, 1.1)
+        audio = time_stretch(audio, rate=rate)
+        aug_label = "time_stretch"
+    elif augmentation_type == "noise":
+        noise_factor = np.random.uniform(0.001, 0.01)
+        audio = add_white_noise(audio, noise_factor=noise_factor)
+        aug_label = "noise"
+    elif augmentation_type == "spec_augment":
+        # Para SpecAugment, no aplicamos augmentation de audio
+        aug_label = "original"
+    else:
+        aug_label = "original"
 
     # 3. Pipeline: SpecAugment ANTES o DESPUÉS de segmentar
     if spec_augment_before_segment and apply_spec_augment:
@@ -505,6 +526,10 @@ def _add_samples_to_dataset(
 ):
     """Helper to avoid code duplication when adding samples."""
     if spectrograms:
+        # Handle case where segments is None (SpecAugment before segmentation)
+        if segments is None:
+            segments = [None] * len(spectrograms)
+
         for j, (spec, seg) in enumerate(zip(spectrograms, segments)):
             all_samples.append(
                 {
@@ -525,6 +550,7 @@ def _add_samples_to_dataset(
 
 def create_augmented_dataset(
     audio_files,
+    augmentation_types: list = None,
     apply_spec_augment: bool = True,
     num_spec_augment_versions: int = 2,
     spec_augment_before_segment: bool = True,
@@ -535,18 +561,21 @@ def create_augmented_dataset(
     force_regenerate: bool = False,
 ):
     """
-    Crea dataset con SpecAugment (SIMPLIFICADO - sin pitch/time/noise).
+    Crea dataset con augmentation configurable.
 
-    PIPELINE SIMPLIFICADO:
+    PIPELINE:
     1. Load audio
     2. Crear espectrograma Mel
-    3. SpecAugment (frequency + time masking)
+    3. Aplicar augmentation según configuración
     4. Segmentar (si spec_augment_before_segment=True)
     5. Normalizar (opcional)
 
     Args:
         audio_files: Lista de archivos de audio
-        apply_spec_augment: Si True, aplica SpecAugment
+        augmentation_types: Lista de tipos de augmentation a aplicar
+                           ["original", "pitch_shift", "time_stretch", "noise", "spec_augment"]
+                           Por defecto: ["original", "spec_augment"]
+        apply_spec_augment: DEPRECATED - usar augmentation_types en su lugar
         num_spec_augment_versions: Versiones de SpecAugment por muestra
             (e.g., 2 = original + 2 versiones augmentadas)
         spec_augment_before_segment: Si True, aplica ANTES de segmentar
@@ -559,12 +588,40 @@ def create_augmented_dataset(
         force_regenerate: Si True, regenera cache
 
     Returns:
-        dataset: Lista de muestras (con SpecAugment si apply_spec_augment=True)
+        dataset: Lista de muestras con augmentation aplicada
     """
     from ..core import dataset as dataset_module, preprocessing
     import os
     import pickle
     import hashlib
+
+    # ============================================================
+    # CONFIGURACIÓN DE AUGMENTATION
+    # ============================================================
+
+    # Configuración por defecto: solo SpecAugment
+    if augmentation_types is None:
+        augmentation_types = ["original", "spec_augment"]
+
+    # Compatibilidad con parámetro deprecated
+    if not apply_spec_augment and "spec_augment" in augmentation_types:
+        augmentation_types = [t for t in augmentation_types if t != "spec_augment"]
+    elif apply_spec_augment and "spec_augment" not in augmentation_types:
+        augmentation_types.append("spec_augment")
+
+    # Validar tipos de augmentation
+    valid_types = ["original", "pitch_shift", "time_stretch", "noise", "spec_augment"]
+    invalid_types = [t for t in augmentation_types if t not in valid_types]
+    if invalid_types:
+        raise ValueError(
+            f"Tipos de augmentation inválidos: {invalid_types}. Válidos: {valid_types}"
+        )
+
+    # Determinar qué augmentation aplicar
+    apply_pitch_shift = "pitch_shift" in augmentation_types
+    apply_time_stretch = "time_stretch" in augmentation_types
+    apply_noise = "noise" in augmentation_types
+    apply_spec_augment_final = "spec_augment" in augmentation_types
 
     # ============================================================
     # CACHE MANAGEMENT
@@ -574,8 +631,9 @@ def create_augmented_dataset(
         os.makedirs(cache_dir, exist_ok=True)
 
         # Generate unique cache key
+        aug_types_str = "_".join(sorted(augmentation_types))
         cache_key_data = (
-            f"{len(audio_files)}_specaug_{apply_spec_augment}_"
+            f"{len(audio_files)}_aug_{aug_types_str}_"
             f"v{num_spec_augment_versions}_before{spec_augment_before_segment}_"
             f"skipnorm{skip_normalization}"
         )
@@ -601,19 +659,27 @@ def create_augmented_dataset(
     # ============================================================
     # GENERATE DATASET (if cache miss or disabled)
     # ============================================================
-    print("[INFO] Creando dataset SIMPLIFICADO (solo SpecAugment)...")
+    print("[INFO] Creando dataset con augmentation configurable...")
     n_files = len(audio_files)
     print(f"   Archivos: {n_files}")
-    if apply_spec_augment:
+    print(f"   [CONFIG] Tipos de augmentation: {augmentation_types}")
+
+    if apply_pitch_shift:
+        print("   [CONFIG] Pitch Shift: ACTIVADO")
+    if apply_time_stretch:
+        print("   [CONFIG] Time Stretch: ACTIVADO")
+    if apply_noise:
+        print("   [CONFIG] Noise Injection: ACTIVADO")
+    if apply_spec_augment_final:
         print(
             f"   [CONFIG] SpecAugment: ACTIVADO ({num_spec_augment_versions} versiones)"
         )
         if spec_augment_before_segment:
             print(
-                f"   [CONFIG] SpecAugment GLOBAL (antes de segmentar) - LSTM optimizado"
+                "   [CONFIG] SpecAugment GLOBAL (antes de segmentar) - LSTM optimizado"
             )
         else:
-            print(f"   [CONFIG] SpecAugment por frame - CNN legacy")
+            print("   [CONFIG] SpecAugment por frame - CNN legacy")
 
     all_samples = []
 
@@ -628,26 +694,111 @@ def create_augmented_dataset(
         )
         filename = getattr(file_path, "name", str(file_path))
 
-        # SIMPLIFICADO: Solo Original + SpecAugment (si está activado)
+        # Aplicar augmentation según configuración
         try:
-            # 1. Original (sin augmentation)
-            specs, segs = preprocessing.preprocess_audio_paper(
-                file_path, vowel_type=vowel_type_parsed
-            )
-            _add_samples_to_dataset(
-                all_samples,
-                specs,
-                segs,
-                "original",
-                subject_id,
-                vowel_type_parsed,
-                condition,
-                filename,
-                dataset_module,
-            )
+            # 1. Original (si está en la lista)
+            if "original" in augmentation_types:
+                specs, segs = preprocessing.preprocess_audio_paper(
+                    file_path, vowel_type=vowel_type_parsed
+                )
+                _add_samples_to_dataset(
+                    all_samples,
+                    specs,
+                    segs,
+                    "original",
+                    subject_id,
+                    vowel_type_parsed,
+                    condition,
+                    filename,
+                    dataset_module,
+                )
 
-            # 2. Versiones con SpecAugment (si está activado)
-            if apply_spec_augment and num_spec_augment_versions > 0:
+            # 2. Pitch Shift
+            if apply_pitch_shift:
+                try:
+                    result = preprocess_audio_with_augmentation(
+                        file_path,
+                        vowel_type=vowel_type_parsed,
+                        apply_spec_augment=False,
+                        spec_augment_params=None,
+                        spec_augment_before_segment=spec_augment_before_segment,
+                        skip_normalization=skip_normalization,
+                        augmentation_type="pitch_shift",
+                    )
+                    if result[0] is not None:
+                        specs_aug, segs_aug, _ = result
+                        _add_samples_to_dataset(
+                            all_samples,
+                            specs_aug,
+                            segs_aug,
+                            "pitch_shift",
+                            subject_id,
+                            vowel_type_parsed,
+                            condition,
+                            filename,
+                            dataset_module,
+                        )
+                except Exception as e:
+                    print(f"    [WARN] Error Pitch Shift: {e}")
+
+            # 3. Time Stretch
+            if apply_time_stretch:
+                try:
+                    result = preprocess_audio_with_augmentation(
+                        file_path,
+                        vowel_type=vowel_type_parsed,
+                        apply_spec_augment=False,
+                        spec_augment_params=None,
+                        spec_augment_before_segment=spec_augment_before_segment,
+                        skip_normalization=skip_normalization,
+                        augmentation_type="time_stretch",
+                    )
+                    if result[0] is not None:
+                        specs_aug, segs_aug, _ = result
+                        _add_samples_to_dataset(
+                            all_samples,
+                            specs_aug,
+                            segs_aug,
+                            "time_stretch",
+                            subject_id,
+                            vowel_type_parsed,
+                            condition,
+                            filename,
+                            dataset_module,
+                        )
+                except Exception as e:
+                    print(f"    [WARN] Error Time Stretch: {e}")
+
+            # 4. Noise Injection
+            if apply_noise:
+                try:
+                    result = preprocess_audio_with_augmentation(
+                        file_path,
+                        vowel_type=vowel_type_parsed,
+                        apply_spec_augment=False,
+                        spec_augment_params=None,
+                        spec_augment_before_segment=spec_augment_before_segment,
+                        skip_normalization=skip_normalization,
+                        augmentation_type="noise",
+                    )
+                    if result[0] is not None:
+                        specs_aug, segs_aug, _ = result
+                        _add_samples_to_dataset(
+                            all_samples,
+                            specs_aug,
+                            segs_aug,
+                            "noise",
+                            subject_id,
+                            vowel_type_parsed,
+                            condition,
+                            filename,
+                            dataset_module,
+                        )
+                except Exception as e:
+                    print(f"    [WARN] Error Noise Injection: {e}")
+
+            # 5. SpecAugment (múltiples versiones)
+            if apply_spec_augment_final and num_spec_augment_versions > 0:
                 for spec_ver in range(num_spec_augment_versions):
                     try:
                         result = preprocess_audio_with_augmentation(
@@ -657,6 +808,7 @@ def create_augmented_dataset(
                             spec_augment_params=None,
                             spec_augment_before_segment=spec_augment_before_segment,
                             skip_normalization=skip_normalization,
+                            augmentation_type="spec_augment",
                         )
                         if result[0] is None:
                             continue

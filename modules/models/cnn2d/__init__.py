@@ -21,7 +21,14 @@ from .inference import (
     analyze_uncertainty,
     print_inference_report,
 )
-from .visualization import generate_visual_report
+from .visualization import (
+    generate_visual_report,
+    visualize_augmented_samples,
+    compare_healthy_vs_parkinson,
+    analyze_specaugment_effects,
+    quantify_specaugment_effects,
+    analyze_spectrogram_stats,
+)
 from .utils import (
     split_by_speaker,
     create_dataloaders_from_existing,
@@ -48,6 +55,11 @@ __all__ = [
     "analyze_uncertainty",
     "print_inference_report",
     "generate_visual_report",
+    "visualize_augmented_samples",
+    "compare_healthy_vs_parkinson",
+    "analyze_specaugment_effects",
+    "quantify_specaugment_effects",
+    "analyze_spectrogram_stats",
     "split_by_speaker",
     "create_dataloaders_from_existing",
     "compute_class_weights_from_dataset",

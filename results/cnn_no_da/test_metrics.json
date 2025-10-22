@@ -1,44 +1,44 @@
 {
-  "accuracy": 0.9855769230769231,
-  "f1_macro": 0.9853479853479854,
-  "precision_macro": 0.9859644998236746,
-  "recall_macro": 0.9847791927578039,
-  "f1_weighted": 0.9855681177796562,
+  "accuracy": 1.0,
+  "f1_macro": 1.0,
+  "precision_macro": 1.0,
+  "recall_macro": 1.0,
+  "f1_weighted": 1.0,
   "confusion_matrix": [
     [
-      231,
-      2
+      23,
+      0
     ],
     [
-      4,
-      179
+      0,
+      55
     ]
   ],
   "classification_report": {
     "Healthy": {
-      "precision": 0.9829787234042553,
-      "recall": 0.9914163090128756,
-      "f1-score": 0.9871794871794872,
-      "support": 233.0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 23.0
     },
     "Parkinson": {
-      "precision": 0.988950276243094,
-      "recall": 0.9781420765027322,
-      "f1-score": 0.9835164835164835,
-      "support": 183.0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 55.0
     },
-    "accuracy": 0.9855769230769231,
+    "accuracy": 1.0,
     "macro avg": {
-      "precision": 0.9859644998236746,
-      "recall": 0.9847791927578039,
-      "f1-score": 0.9853479853479854,
-      "support": 416.0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 78.0
     },
     "weighted avg": {
-      "precision": 0.9856056324655713,
-      "recall": 0.9855769230769231,
-      "f1-score": 0.9855681177796562,
-      "support": 416.0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 78.0
     }
   }
 }

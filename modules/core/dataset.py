@@ -117,11 +117,11 @@ def process_dataset(
         preprocess_fn = preprocessing.preprocess_audio_paper
 
     if not audio_files:
-        print("❌ 'audio_files' está vacío: no hay nada que procesar.")
+        print("Error: 'audio_files' está vacío: no hay nada que procesar.")
         return []
 
     files_to_process = list(audio_files[:max_files]) if max_files else list(audio_files)
-    print(f"🔄 Procesando {len(files_to_process)} archivos...")
+    print(f"Procesando {len(files_to_process)} archivos...")
 
     dataset: List[Dict] = []
 
@@ -141,7 +141,7 @@ def process_dataset(
         try:
             spectrograms, segments = preprocess_fn(file_path, vowel_type=vowel_type)
         except Exception as e:
-            print(f"⚠️  Error al procesar {file_path}: {e}. Continuando…")
+            print(f"Error al procesar {file_path}: {e}. Continuando...")
             continue
 
         if not spectrograms:
@@ -165,7 +165,7 @@ def process_dataset(
                 }
             )
 
-    print(f"✅ {len(dataset)} muestras generadas")
+    print(f"{len(dataset)} muestras generadas")
     return dataset
 
 
@@ -187,7 +187,7 @@ def to_pytorch_tensors(
         metas    : List[SampleMeta]    metadata list
     """
     if not dataset:
-        print("❌ Dataset vacío: no hay tensores que crear.")
+        print("Error: Dataset vacío: no hay tensores que crear.")
         return None, None, None, []
 
     # Extraer metadatos y espectrogramas
@@ -214,7 +214,7 @@ def to_pytorch_tensors(
     y_domain_t = torch.tensor(y_domain, dtype=torch.long)  # (N,)
 
     # Reporte compacto
-    print("📊 PyTorch tensors listos:")
+    print("PyTorch tensors listos:")
     print(f"  - X: {tuple(X.shape)}")
     print(f"  - y_task: {tuple(y_task_t.shape)}  (dist={dict(Counter(y_task))})")
     print(f"  - y_domain: {tuple(y_domain_t.shape)}  (K dominios={len(domain_index)})")
@@ -280,7 +280,7 @@ def summarize_distribution(dataset: List[Dict]) -> Dict[str, Counter]:
 
 def print_summary(dist: Dict[str, Counter]) -> None:
     """Pretty-print distributions."""
-    print("\n📊 DISTRIBUCIÓN POR VOCAL:")
+    print("\nDISTRIBUCIÓN POR VOCAL:")
     for k, v in dist["vowel"].items():
         print(f"  - {k}: {v} muestras")
     print("\n📊 DISTRIBUCIÓN POR CONDICIÓN:")
@@ -405,13 +405,13 @@ def load_spectrograms_cache(cache_path: str) -> Optional[List[Dict]]:
             dataset = pickle.load(f)
 
         size_mb = cache_file.stat().st_size / (1024 * 1024)
-        print(f"✅ Cache cargado: {cache_path}")
+        print(f"Cache cargado: {cache_path}")
         print(f"   Tamaño: {size_mb:.1f} MB")
         print(f"   Muestras: {len(dataset)}")
 
         return dataset
     except Exception as e:
-        print(f"⚠️  Error cargando cache: {e}")
+        print(f"Error cargando cache: {e}")
         return None
 
 
@@ -533,3 +533,22 @@ def speaker_independent_split(
     print("=" * 70 + "\n")
 
     return train_idx, val_idx, test_idx
+
+
+# ============================================================
+# PYTORCH DATASET WRAPPER
+# ============================================================
+
+
+class DictDataset(torch.utils.data.Dataset):
+    """Wrapper para convertir tensores en diccionarios."""
+
+    def __init__(self, X, y):
+        self.X = X
+        self.y = y
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        return {"spectrogram": self.X[idx], "label": self.y[idx]}

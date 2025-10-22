@@ -9,5 +9,13 @@ from . import preprocessing
 from . import sequence_dataset
 from . import utils
 from . import visualization
+from .dataset import DictDataset
 
-__all__ = ["dataset", "preprocessing", "sequence_dataset", "utils", "visualization"]
+__all__ = [
+    "dataset",
+    "preprocessing",
+    "sequence_dataset",
+    "utils",
+    "visualization",
+    "DictDataset",
+]

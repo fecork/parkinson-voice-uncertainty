@@ -1,19 +1,19 @@
 {
-  "loss_pd": 0.6949444092237033,
-  "loss_domain": 3.325217980604905,
-  "loss_total": 4.020162362318772,
-  "acc_pd": 0.5600961538461539,
+  "loss_pd": 0.6832810044288635,
+  "loss_domain": NaN,
+  "loss_total": NaN,
+  "acc_pd": 0.5714285714285714,
   "f1_pd": 0.0,
   "precision_pd": 0.0,
   "recall_pd": 0.0,
-  "acc_domain": 0.004807692307692308,
+  "acc_domain": 0.0,
   "confusion_matrix": [
     [
-      233,
+      24,
       0
     ],
     [
-      183,
+      18,
       0
     ]
   ]

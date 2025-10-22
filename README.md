@@ -120,8 +120,9 @@ parkinson-voice-uncertainty/
 │
 ├── 📓 NOTEBOOKS (Ejecutar en este orden)
 │   ├── 1. data_preprocessing.ipynb    ← Preprocesar datos (UNA VEZ)
-│   ├── 2. cnn_training.ipynb          ← CNN2D baseline
-│   └── 3. cnn_da_training.ipynb       ← CNN2D_DA con GRL
+│   ├── 2. data_augmentation.ipynb     ← Augmentation de datos (OPCIONAL)
+│   ├── 3. cnn_training.ipynb          ← CNN2D baseline
+│   └── 4. cnn_da_training.ipynb       ← CNN2D_DA con GRL
 │
 ├── 🚀 pipelines/                      ← Scripts automatizados
 │   ├── README.md                      ← Documentación
@@ -166,8 +167,9 @@ parkinson-voice-uncertainty/
 │           └── visualization.py       ← Visualizaciones
 │
 ├── 💾 cache/                          ← Datos preprocesados
-│   ├── healthy/
-│   └── parkinson/
+│   ├── original/                      ← Datos preprocesados originales
+│   ├── augmented/                     ← Datos augmentados
+│   └── sequences/                     ← Secuencias para LSTM
 │
 ├── 📊 data/                           ← Datos raw
 │   ├── vowels_healthy/
@@ -250,9 +252,12 @@ python test/test_ibarra_preprocessing.py  # Validar que cumple paper
 # Generar datos preprocesados:
 jupyter notebook data_preprocessing.ipynb  # 1. Generar cache (~2-3 min)
 
+# Aplicar augmentation (opcional):
+jupyter notebook data_augmentation.ipynb   # 2. Augmentation (~1-2 min)
+
 # Entrenar modelos:
-jupyter notebook cnn_training.ipynb        # 2A. Baseline (~10-15 min)
-jupyter notebook cnn_da_training.ipynb     # 2B. Domain Adapt (~15-20 min)
+jupyter notebook cnn_training.ipynb        # 3. Baseline (~10-15 min)
+jupyter notebook cnn_da_training.ipynb     # 4. Domain Adapt (~15-20 min)
 
 # Pipelines automatizados:
 python pipelines/train_cnn.py --lr 0.001
@@ -298,16 +303,43 @@ Las pruebas validan:
 
 **Output**:
 ```
-cache/
-├── healthy_ibarra.pkl     (~50-80 espectrogramas)
-└── parkinson_ibarra.pkl   (~50-80 espectrogramas)
+cache/original/
+├── healthy_ibarra.pkl     (~155 espectrogramas)
+└── parkinson_ibarra.pkl   (~121 espectrogramas)
 ```
 
 **Tiempo**: ~2-3 minutos (sin augmentation, más rápido)
 
 ---
 
-### 2️⃣ `cnn_training.ipynb`
+### 2️⃣ `data_augmentation.ipynb`
+
+**Propósito**: Aplicar augmentation a datos Parkinson para mejorar balance
+
+**Prerequisito**: Cache original generado (ejecutar `data_preprocessing.ipynb` primero)
+
+**Contenido**:
+- Carga datos originales desde cache
+- Aplicación de SpecAugment a datos Parkinson:
+  - Máscaras de frecuencia y tiempo
+  - 2 versiones augmentadas por espectrograma original
+  - Parámetros conservadores para preservar información
+- Visualización de espectrogramas augmentados
+- Guardado de dataset augmentado en cache
+
+**Output**:
+```
+cache/augmented/
+└── augmented_dataset_specaugment.pkl  (~363 espectrogramas)
+```
+
+**Tiempo**: ~1-2 minutos
+
+**Uso**: Opcional, solo si necesitas mejorar el balance de datos
+
+---
+
+### 3️⃣ `cnn_training.ipynb`
 
 **Propósito**: Entrenar modelo CNN2D baseline CON augmentation
 
@@ -341,7 +373,7 @@ results/cnn_no_da/
 
 ---
 
-### 3️⃣ `cnn_da_training.ipynb`
+### 4️⃣ `cnn_da_training.ipynb`
 
 **Propósito**: Entrenar modelo CNN2D_DA con Domain Adaptation (según paper exacto)
 
