@@ -1,7 +1,7 @@
 """
 Capas Compartidas entre Modelos
 ================================
-Componentes reutilizables: FeatureExtractor, GRL, ClassifierHead.
+Componentes reutilizables: FeatureExtractor, GRL, ClassifierHead, utilidades.
 
 Estos componentes son usados por:
 - CNN2D / CNN2D_DA
@@ -219,4 +219,11 @@ class ClassifierHead(nn.Module):
             Logits (B, n_classes)
         """
         return self.classifier(x)
+
+
+# ============================================================
+# NOTA: UTILIDADES MOVIDAS A MÓDULOS ESPECÍFICOS
+# ============================================================
+# EarlyStopping, count_parameters, print_model_summary
+# movidas a modules.models.common.training_utils
 

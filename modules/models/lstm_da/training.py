@@ -23,8 +23,8 @@ from sklearn.metrics import (
     f1_score,
 )
 
-# Reutilizar EarlyStopping de CNN2D
-from ..cnn2d.training import EarlyStopping
+# Reutilizar EarlyStopping del módulo común
+from ..common.training_utils import EarlyStopping, compute_metrics, compute_class_weights_auto
 
 
 # ============================================================

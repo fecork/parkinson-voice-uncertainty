@@ -37,24 +37,24 @@ def test_imports():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_model import (
+        from modules.models.uncertainty.model import (
             UncertaintyCNN,
             MCDropout,
             MCDropout2d,
             print_uncertainty_model_summary,
         )
-        from modules.uncertainty_loss import (
+        from modules.models.uncertainty.loss import (
             heteroscedastic_classification_loss,
             compute_nll,
             compute_brier_score,
             compute_ece,
         )
-        from modules.uncertainty_training import (
+        from modules.models.uncertainty.training import (
             train_uncertainty_model,
             evaluate_with_uncertainty,
             print_uncertainty_results,
         )
-        from modules.uncertainty_visualization import (
+        from modules.models.uncertainty.visualization import (
             plot_uncertainty_histograms,
             plot_reliability_diagram,
             plot_uncertainty_scatter,
@@ -75,7 +75,7 @@ def test_mc_dropout_always_active():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_model import MCDropout, MCDropout2d
+        from modules.models.uncertainty.model import MCDropout, MCDropout2d
 
         # Test MCDropout
         dropout = MCDropout(p=0.5)
@@ -123,7 +123,7 @@ def test_two_heads_architecture():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_model import UncertaintyCNN
+        from modules.models.uncertainty.model import UncertaintyCNN
 
         model = UncertaintyCNN(n_classes=2)
 
@@ -166,7 +166,7 @@ def test_gaussian_noise_injection():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_model import UncertaintyCNN
+        from modules.models.uncertainty.model import UncertaintyCNN
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = UncertaintyCNN(n_classes=2).to(device).eval()
@@ -203,7 +203,7 @@ def test_kendall_gal_decomposition():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_model import UncertaintyCNN
+        from modules.models.uncertainty.model import UncertaintyCNN
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = UncertaintyCNN(n_classes=2).to(device).eval()
@@ -249,7 +249,7 @@ def test_aleatoric_is_entropy():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_model import UncertaintyCNN
+        from modules.models.uncertainty.model import UncertaintyCNN
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = UncertaintyCNN(n_classes=2).to(device).eval()
@@ -297,8 +297,8 @@ def test_heteroscedastic_loss():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_model import UncertaintyCNN
-        from modules.uncertainty_loss import heteroscedastic_classification_loss
+        from modules.models.uncertainty.model import UncertaintyCNN
+        from modules.models.uncertainty.loss import heteroscedastic_classification_loss
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = UncertaintyCNN(n_classes=2).to(device).train()
@@ -360,7 +360,7 @@ def test_sigma_computation():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_model import UncertaintyCNN
+        from modules.models.uncertainty.model import UncertaintyCNN
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = UncertaintyCNN(n_classes=2, s_min=-10, s_max=3).to(device)
@@ -406,7 +406,7 @@ def test_uncertainty_metrics():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_model import UncertaintyCNN
+        from modules.models.uncertainty.model import UncertaintyCNN
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = UncertaintyCNN(n_classes=2).to(device).eval()
@@ -465,7 +465,7 @@ def test_calibration_metrics():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_loss import (
+        from modules.models.uncertainty.loss import (
             compute_nll,
             compute_brier_score,
             compute_ece,
@@ -505,7 +505,7 @@ def test_uncertainty_separation():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_model import UncertaintyCNN
+        from modules.models.uncertainty.model import UncertaintyCNN
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = UncertaintyCNN(n_classes=2).to(device).eval()
@@ -578,7 +578,7 @@ def test_visualization_functions():
     print("=" * 70)
 
     try:
-        from modules.uncertainty_visualization import (
+        from modules.models.uncertainty.visualization import (
             plot_uncertainty_histograms,
             plot_reliability_diagram,
             plot_uncertainty_scatter,
@@ -602,7 +602,7 @@ def test_notebook_exists():
     print("TEST 13: NOTEBOOK PRINCIPAL")
     print("=" * 70)
 
-    notebook_path = Path("cnn_uncertainty_training.ipynb")
+    notebook_path = Path("notebooks/cnn_uncertainty_training.ipynb")
 
     if notebook_path.exists():
         print(f"{OK} Notebook encontrado: {notebook_path}")

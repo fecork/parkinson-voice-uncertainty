@@ -306,33 +306,7 @@ def get_last_conv_layer(model: CNN2D) -> nn.Module:
 # ============================================================
 
 
-def count_parameters(model: nn.Module) -> int:
-    """
-    Cuenta parámetros entrenables del modelo.
-
-    Args:
-        model: Modelo PyTorch
-
-    Returns:
-        Número de parámetros
-    """
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-def print_model_summary(model: nn.Module):
-    """
-    Imprime resumen del modelo.
-
-    Args:
-        model: Modelo PyTorch
-    """
-    print("\n" + "=" * 60)
-    print("RESUMEN DEL MODELO")
-    print("=" * 60)
-    print(model)
-    print("\n" + "-" * 60)
-    print(f"Parámetros totales: {count_parameters(model):,}")
-    print("-" * 60 + "\n")
+# Funciones utilitarias movidas a modules.models.common.layers
 
 
 # ============================================================

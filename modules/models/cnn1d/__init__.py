@@ -4,7 +4,8 @@ CNN 1D Module
 Módulos para modelo CNN 1D con atención temporal y Domain Adaptation.
 """
 
-from .model import CNN1D_DA, print_model_summary
+from .model import CNN1D_DA
+from ..common.training_utils import print_model_summary
 from .training import (
     train_model_da,
     evaluate_da,

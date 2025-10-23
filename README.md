@@ -118,11 +118,17 @@ Para el modelo baseline CNN2D (`cnn_training.ipynb`), se aplica augmentation adi
 ```
 parkinson-voice-uncertainty/
 │
-├── 📓 NOTEBOOKS (Ejecutar en este orden)
+├── 📓 notebooks/ (Documentos principales - Ejecutar en este orden)
 │   ├── 1. data_preprocessing.ipynb    ← Preprocesar datos (UNA VEZ)
 │   ├── 2. data_augmentation.ipynb     ← Augmentation de datos (OPCIONAL)
-│   ├── 3. cnn_training.ipynb          ← CNN2D baseline
-│   └── 4. cnn_da_training.ipynb       ← CNN2D_DA con GRL
+│   ├── 3. cnn_uncertainty_training.ipynb ← CNN con incertidumbre
+│   └── 4. gradcam_inference.ipynb     ← Visualización GradCAM
+│
+├── 🔬 research/ (Investigaciones - No revisar por profesor)
+│   ├── cnn_training.ipynb             ← CNN2D baseline
+│   ├── cnn_da_training.ipynb          ← CNN2D_DA con GRL
+│   ├── cnn1d_da_training.ipynb        ← CNN1D con DA
+│   └── lstm_da_training.ipynb         ← LSTM con DA
 │
 ├── 🚀 pipelines/                      ← Scripts automatizados
 │   ├── README.md                      ← Documentación
@@ -320,18 +326,16 @@ sequences/            lstm_da/
 python test/test_ibarra_preprocessing.py  # Validar que cumple paper
 
 # Generar datos preprocesados:
-jupyter notebook data_preprocessing.ipynb  # 1. Generar cache (~2-3 min)
+jupyter notebook notebooks/data_preprocessing.ipynb  # 1. Generar cache (~2-3 min)
 
 # Aplicar augmentation (opcional):
-jupyter notebook data_augmentation.ipynb   # 2. Augmentation (~1-2 min)
+jupyter notebook notebooks/data_augmentation.ipynb   # 2. Augmentation (~1-2 min)
 
-# Entrenar modelos:
-jupyter notebook cnn_training.ipynb        # 3. Baseline (~10-15 min)
-jupyter notebook cnn_da_training.ipynb     # 4. Domain Adapt (~15-20 min)
+# Entrenar modelo con incertidumbre:
+jupyter notebook notebooks/cnn_uncertainty_training.ipynb  # 3. CNN con incertidumbre (~15-20 min)
 
-# LSTM (NUEVO):
-jupyter notebook lstm_da_training.ipynb                   # 5. LSTM exploratorio (~10-15 min)
-# Nota: Las secuencias se generan automáticamente si no existen
+# Visualización GradCAM:
+jupyter notebook notebooks/gradcam_inference.ipynb  # 4. GradCAM (~5-10 min)
 
 # Pipelines automatizados:
 python pipelines/train_cnn.py --lr 0.001
@@ -357,9 +361,34 @@ Las pruebas validan:
 
 ---
 
+## 📁 Organización de Carpetas
+
+### 📓 `/notebooks` - Documentos Principales
+Esta carpeta contiene los notebooks principales que deben ejecutarse en orden:
+
+1. **`data_preprocessing.ipynb`** - Preprocesamiento de datos (UNA VEZ)
+2. **`data_augmentation.ipynb`** - Augmentation de datos (OPCIONAL)
+3. **`cnn_uncertainty_training.ipynb`** - Entrenamiento con incertidumbre
+4. **`gradcam_inference.ipynb`** - Visualización GradCAM
+
+### 🔬 `/research` - Investigaciones
+Esta carpeta contiene notebooks de investigación para el doctorado:
+- **`cnn_training.ipynb`** - CNN2D baseline
+- **`cnn_da_training.ipynb`** - CNN2D con Domain Adaptation
+- **`cnn1d_da_training.ipynb`** - CNN1D con Domain Adaptation
+- **`lstm_da_training.ipynb`** - LSTM con Domain Adaptation
+
+**Nota**: Los notebooks en `/research` son para investigación personal y no deben ser revisados por el profesor.
+
+### 💾 Cache y Datos
+- **`cache/original/`** - Datos preprocesados originales
+- **`cache/augmented/`** - Datos augmentados
+- **`cache/sequences/`** - Secuencias para LSTM
+- **`data/`** - Datos raw de audio
+
 ## 📓 Notebooks Disponibles
 
-### 1️⃣ `data_preprocessing.ipynb`
+### 1️⃣ `notebooks/data_preprocessing.ipynb`
 
 **Propósito**: Generar cache de espectrogramas preprocesados según Ibarra et al. (2023)
 
@@ -1120,6 +1149,36 @@ test_metrics_da  # Métricas PD + Domain
 ```bash
 python test/test_lstm_sequences.py
 # [PASS] TODOS LOS TESTS PASARON (14/14)
+```
+
+### Suite de Tests para GradCAM
+
+**Archivo**: `test/test_gradcam_math.py`  
+**Tests**: 19/19 pasando
+
+**Validaciones implementadas:**
+- ✅ Inicialización correcta de GradCAM
+- ✅ Registro de hooks (forward/backward)
+- ✅ Guardado de activaciones y gradientes
+- ✅ Cálculo correcto de Global Average Pooling
+- ✅ Combinación ponderada de activaciones
+- ✅ Aplicación correcta de ReLU
+- ✅ Normalización matemática [0, 1]
+- ✅ Interpolación bilineal
+- ✅ Generación completa de CAM
+- ✅ Consistencia entre ejecuciones
+- ✅ Diferentes clases objetivo
+- ✅ Propiedades matemáticas de GradCAM
+- ✅ Flujo de gradientes correcto
+- ✅ Eficiencia de memoria
+- ✅ Procesamiento de batch
+- ✅ Casos extremos
+- ✅ Integración con modelos reales
+
+**Ejecutar tests:**
+```bash
+python test/test_gradcam_math.py
+# [PASS] TODOS LOS TESTS PASARON (19/19)
 ```
 
 **Documentación detallada**: Ver `LSTM_SEQUENCE_IMPROVEMENTS.md`

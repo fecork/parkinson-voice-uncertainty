@@ -171,34 +171,7 @@ class CNN1D_DA(nn.Module):
 # ============================================================
 
 
-def count_parameters(model: nn.Module) -> int:
-    """
-    Cuenta parámetros entrenables del modelo.
-
-    Args:
-        model: Modelo PyTorch
-
-    Returns:
-        Número de parámetros
-    """
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-def print_model_summary(model: nn.Module):
-    """
-    Imprime resumen del modelo.
-
-    Args:
-        model: Modelo PyTorch
-    """
-    print("\n" + "=" * 70)
-    print("ARQUITECTURA DEL MODELO CNN1D_DA")
-    print("=" * 70)
-    print(model)
-    print("\n" + "-" * 70)
-    print(f"Parámetros totales: {count_parameters(model):,}")
-    print(f"Parámetros entrenables: {count_parameters(model):,}")
-    print("-" * 70 + "\n")
+# Funciones utilitarias movidas a modules.models.common.layers
 
 
 # ============================================================

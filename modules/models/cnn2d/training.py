@@ -28,58 +28,8 @@ from sklearn.metrics import (
 # ============================================================
 
 
-class EarlyStopping:
-    """
-    Early stopping para detener entrenamiento cuando no mejora.
-    """
-
-    def __init__(self, patience: int = 10, min_delta: float = 0.0, mode: str = "min"):
-        """
-        Args:
-            patience: Épocas a esperar antes de detener
-            min_delta: Cambio mínimo para considerar mejora
-            mode: 'min' para minimizar, 'max' para maximizar
-        """
-        self.patience = patience
-        self.min_delta = min_delta
-        self.mode = mode
-        self.counter = 0
-        self.best_score = None
-        self.early_stop = False
-        self.best_epoch = 0
-
-        if mode == "min":
-            self.compare_fn = lambda score, best: score < (best - min_delta)
-        else:
-            self.compare_fn = lambda score, best: score > (best + min_delta)
-
-    def __call__(self, score: float, epoch: int) -> bool:
-        """
-        Actualiza early stopping.
-
-        Args:
-            score: Métrica actual
-            epoch: Época actual
-
-        Returns:
-            True si se debe detener
-        """
-        if self.best_score is None:
-            self.best_score = score
-            self.best_epoch = epoch
-            return False
-
-        if self.compare_fn(score, self.best_score):
-            self.best_score = score
-            self.best_epoch = epoch
-            self.counter = 0
-        else:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.early_stop = True
-                return True
-
-        return False
+# EarlyStopping movida a modules.models.common.layers
+from ..common.training_utils import EarlyStopping, compute_metrics, compute_class_weights_auto
 
 
 # ============================================================

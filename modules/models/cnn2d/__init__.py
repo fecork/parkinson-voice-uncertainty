@@ -4,7 +4,8 @@ CNN 2D Module
 Módulos para modelo CNN 2D (con y sin Domain Adaptation).
 """
 
-from .model import CNN2D, CNN2D_DA, GradientReversalLayer, print_model_summary
+from .model import CNN2D, CNN2D_DA, GradientReversalLayer
+from ..common.training_utils import print_model_summary
 from .training import (
     train_model,
     detailed_evaluation,
