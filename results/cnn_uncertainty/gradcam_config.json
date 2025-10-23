@@ -1,0 +1,22 @@
+{
+  "model_class": "UncertaintyCNN",
+  "target_layer": "block2.2",
+  "class_names": ["Healthy", "Parkinson"],
+  "preprocess": {
+    "input_size": [1, 65, 41],
+    "normalize": false
+  },
+  "bayesian": {
+    "dropout_p_conv": 0.25,
+    "dropout_p_fc": 0.25,
+    "mc_samples_default": 30
+  },
+  "model_params": {
+    "n_classes": 2,
+    "p_drop_conv": 0.25,
+    "p_drop_fc": 0.25,
+    "input_shape": [65, 41],
+    "s_min": -10.0,
+    "s_max": 3.0
+  }
+}
