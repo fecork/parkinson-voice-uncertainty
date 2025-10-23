@@ -100,7 +100,7 @@ class TimeCNNBiLSTM_DA(nn.Module):
         )
 
         # Dimensión de features después de BiLSTM
-        self.feat_dim = 2 * lstm_units  # bidirectional
+        self.feat_dim = 2 * lstm_units  # bidirectional conquetación de las direcciones
 
         # PD Head (tarea principal)
         self.pd_head = nn.Sequential(

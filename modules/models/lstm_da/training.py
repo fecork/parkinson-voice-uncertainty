@@ -201,7 +201,9 @@ def validate_epoch_da(
             batch_size = X.size(0)
 
             # Forward pass
-            logits_pd, logits_domain, _ = model(X, lengths=lengths, return_embeddings=False)
+            logits_pd, logits_domain, _ = model(
+                X, lengths=lengths, return_embeddings=False
+            )
 
             # Compute losses
             loss_pd = criterion_pd(logits_pd, y_pd)
@@ -334,7 +336,9 @@ def train_model_da_kfold(
             val_indices.extend(subject_to_indices[subj])
 
         if verbose:
-            print(f"Train: {len(train_subjects)} subjects → {len(train_indices)} samples")
+            print(
+                f"Train: {len(train_subjects)} subjects → {len(train_indices)} samples"
+            )
             print(f"Val:   {len(val_subjects)} subjects → {len(val_indices)} samples")
 
         # Crear subsets
@@ -381,13 +385,26 @@ def train_model_da_kfold(
             dtype=torch.float32,
         ).to(device)
 
-        # Class weights para domain task
-        train_labels_domain = [metadata_list[i].get("domain_label", 0) for i in train_indices]
-        domain_counts = np.bincount(train_labels_domain)
+        # Class weights para domain task (4 dominios fijos)
+        train_labels_domain = [
+            metadata_list[i].get("domain_label", 0) for i in train_indices
+        ]
+        domain_counts = np.bincount(
+            train_labels_domain, minlength=4
+        )  # Forzar 4 dominios
         class_weights_domain = torch.tensor(
-            [len(train_labels_domain) / (len(domain_counts) * c) for c in domain_counts],
+            [
+                len(train_labels_domain) / (4 * c) if c > 0 else 1.0
+                for c in domain_counts
+            ],
             dtype=torch.float32,
         ).to(device)
+
+        # Verificar que tenemos exactamente 4 pesos
+        if class_weights_domain.shape[0] != 4:
+            class_weights_domain = torch.tensor(
+                [1.0, 1.0, 1.0, 1.0], dtype=torch.float32
+            ).to(device)
 
         # Loss functions
         criterion_pd = nn.CrossEntropyLoss(weight=class_weights_pd)
@@ -435,7 +452,7 @@ def train_model_da_kfold(
             # Print progress
             if verbose and (epoch + 1) % 10 == 0:
                 print(
-                    f"Epoch {epoch+1:3d}/{n_epochs} | "
+                    f"Epoch {epoch + 1:3d}/{n_epochs} | "
                     f"Train Loss: {train_metrics['loss_pd']:.4f} | "
                     f"Val Loss: {val_metrics['loss_pd']:.4f} | "
                     f"Val F1: {val_metrics['f1_pd']:.4f} | "
@@ -457,7 +474,7 @@ def train_model_da_kfold(
 
             if early_stopping(val_metrics["loss_pd"], epoch):
                 if verbose:
-                    print(f"Early stopping en época {epoch+1}")
+                    print(f"Early stopping en época {epoch + 1}")
                 break
 
         # Guardar resultados del fold
@@ -512,9 +529,15 @@ def train_model_da_kfold(
         print("\n" + "=" * 70)
         print(f"K-FOLD CV COMPLETADO ({n_folds} folds)")
         print("=" * 70)
-        print(f"Val Loss PD:  {aggregated_results['mean_val_loss_pd']:.4f} ± {aggregated_results['std_val_loss_pd']:.4f}")
-        print(f"Val Acc PD:   {aggregated_results['mean_val_acc_pd']:.4f} ± {aggregated_results['std_val_acc_pd']:.4f}")
-        print(f"Val F1 PD:    {aggregated_results['mean_val_f1_pd']:.4f} ± {aggregated_results['std_val_f1_pd']:.4f}")
+        print(
+            f"Val Loss PD:  {aggregated_results['mean_val_loss_pd']:.4f} ± {aggregated_results['std_val_loss_pd']:.4f}"
+        )
+        print(
+            f"Val Acc PD:   {aggregated_results['mean_val_acc_pd']:.4f} ± {aggregated_results['std_val_acc_pd']:.4f}"
+        )
+        print(
+            f"Val F1 PD:    {aggregated_results['mean_val_f1_pd']:.4f} ± {aggregated_results['std_val_f1_pd']:.4f}"
+        )
         print(f"Tiempo total: {total_time / 60:.1f} minutos")
         print("=" * 70)
 

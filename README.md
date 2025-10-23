@@ -186,6 +186,50 @@ parkinson-voice-uncertainty/
 
 ---
 
+## 🧠 Arquitecturas de Modelos
+
+### Time-CNN-BiLSTM-DA (NUEVO)
+
+Arquitectura según Ibarra et al. (2023) para modelado temporal de secuencias de voz:
+
+```
+Input: (B, T, 1, H, W) donde T=n_frames
+    ↓
+Time-distributed CNN
+    ├── Conv2D(32) + BN + ReLU + MaxPool
+    ├── Conv2D(64) + BN + ReLU + MaxPool  
+    └── Flatten + Linear(128) + ReLU + Dropout
+    ↓
+Projection: (B*T, 128) → (B, T, 128)
+    ↓
+BiLSTM (hidden=64, bidirectional=True)
+    ├── Forward LSTM
+    └── Backward LSTM
+    ↓
+Output: (B, T, 128) → (B, 128) via Attention/Masking
+    ↓
+Dual Heads:
+    ├── PD Head: Linear(64) + ReLU + Dropout + Linear(2)
+    └── Domain Head: Linear(64) + ReLU + Dropout + Linear(4)
+        (con Gradient Reversal Layer)
+```
+
+**Características clave**:
+- **Time-distributed CNN**: Extrae features por frame independientemente
+- **BiLSTM**: Modela dependencias temporales bidireccionales
+- **Attention/Masking**: Agrega temporalmente ignorando padding
+- **Domain Adaptation**: GRL para invarianza multi-corpus
+- **Lambda warm-up**: GRL crece de 0→1 en 5 épocas
+
+**Hiperparámetros según paper**:
+- `n_frames`: {3, 5, 7, 9} (longitud de secuencia)
+- `lstm_units`: {16, 32, 64} (por dirección)
+- Optimizer: SGD (lr=0.1, momentum=0.9)
+- Scheduler: StepLR (decay cada 30 épocas)
+- Dropout: conv=0.3, fc=0.5
+
+---
+
 ## Flujo de Trabajo
 
 ### Diagrama de Flujo
@@ -223,13 +267,32 @@ cnn_no_da/            cnn_da/
                     ↓
             3. Comparar
                Resultados
+                    ↓
+    ┌─────────┴─────────────┐
+    ↓                       ↓
+┌────────────────┐   ┌─────────────────────┐
+│ Paso 4:        │   │ Paso 5:            │
+│ Generar        │   │ LSTM Training      │
+│ Secuencias     │   │                     │
+│                │   │ lstm_da_training   │
+│ generate_lstm_ │   │                     │
+│ sequences.py   │   │ Time-CNN-BiLSTM-DA │
+│                │   │                     │
+│ Cache original │   │ Secuencias +        │
+│ → Sequences    │   │ Domain Adaptation   │
+│                │   │                     │
+│ ⏱️ 1-2 min      │   │ ⏱️ 10-15 min         │
+└────────────────┘   └─────────────────────┘
+    ↓                       ↓
+cache/                results/
+sequences/            lstm_da/
 ```
 
 ### Estrategia de Augmentation
 
 **SIN Augmentation (Paper Exacto)**:
 - `data_preprocessing.ipynb` → `cache/*_ibarra.pkl`
-- Usado por: `cnn_da_training.ipynb`, `cnn1d_da_training.ipynb`, `time_cnn_lstm_training.ipynb`
+- Usado por: `cnn_da_training.ipynb`, `cnn1d_da_training.ipynb`, `lstm_da_training.ipynb`
 - Objetivo: Seguir paper de Ibarra et al. (2023) exactamente
 
 **CON Augmentation (Mejora Generalización)**:
@@ -237,10 +300,17 @@ cnn_no_da/            cnn_da/
 - Usado solo por: `cnn_training.ipynb`
 - Objetivo: Mejorar robustez del modelo baseline con más datos
 
+**SECUENCIAS LSTM (NUEVO)**:
+- Generación automática en `lstm_da_training.ipynb` → `cache/sequences/*_n{N}.pkl`
+- Usado por: `lstm_da_training.ipynb`, `train_lstm_da_kfold.py`
+- Objetivo: Agrupar espectrogramas en secuencias temporales
+- **AUTOMÁTICO**: Se generan automáticamente si no existen
+
 | Notebook | Augmentation | Cache | Propósito |
 |----------|--------------|-------|-----------|
 | `cnn_training.ipynb` | ✅ SÍ | `*_augmented.pkl` | Baseline robusto |
 | `cnn_da_training.ipynb` | ❌ NO | `*_ibarra.pkl` | Paper exacto |
+| `lstm_da_training.ipynb` | ❌ NO | `sequences/*_n{N}.pkl` | Time-CNN-BiLSTM-DA |
 | Otros notebooks | ❌ NO | `*_ibarra.pkl` | Paper exacto |
 
 ### Quick Start
@@ -258,6 +328,10 @@ jupyter notebook data_augmentation.ipynb   # 2. Augmentation (~1-2 min)
 # Entrenar modelos:
 jupyter notebook cnn_training.ipynb        # 3. Baseline (~10-15 min)
 jupyter notebook cnn_da_training.ipynb     # 4. Domain Adapt (~15-20 min)
+
+# LSTM (NUEVO):
+jupyter notebook lstm_da_training.ipynb                   # 5. LSTM exploratorio (~10-15 min)
+# Nota: Las secuencias se generan automáticamente si no existen
 
 # Pipelines automatizados:
 python pipelines/train_cnn.py --lr 0.001
@@ -402,6 +476,43 @@ results/cnn_da/
 
 ---
 
+### 5️⃣ `lstm_da_training.ipynb` (NUEVO)
+
+**Propósito**: Entrenamiento exploratorio de Time-CNN-BiLSTM-DA con Domain Adaptation
+
+**Prerequisito**: Secuencias generadas (ejecutar `pipelines/generate_lstm_sequences.py` primero)
+
+**Contenido**:
+- Carga secuencias desde `cache/sequences/`
+- Arquitectura Time-CNN-BiLSTM-DA según Ibarra et al. (2023):
+  - **Time-distributed CNN**: Extracción de features por frame
+  - **BiLSTM**: Modelado temporal de secuencias
+  - **Attention Pooling**: Agregación temporal con masking
+  - **Dual-head**: Clasificación PD + Domain Adaptation con GRL
+- Input: secuencias de n espectrogramas consecutivos (n, 1, 65, 41)
+- K-fold speaker-independent (un fold para exploración)
+- Entrenamiento con SGD + StepLR + GRL warm-up
+- Visualización de resultados y attention weights
+
+**Características**:
+- Masking para secuencias de diferente longitud
+- Lambda GRL warm-up (0→1 en 5 épocas)
+- Class weights automáticos
+- Análisis de attention weights por secuencia
+
+**Output**:
+```
+# Visualizaciones en el notebook:
+- Curvas de entrenamiento (loss, accuracy, F1)
+- Matriz de confusión
+- Histograma de probabilidades
+- Attention weights por muestra
+```
+
+**Tiempo**: ~10-15 minutos (un fold)
+
+---
+
 ## 🚀 Pipelines Automatizados
 
 ### `pipelines/train_cnn.py`
@@ -455,6 +566,46 @@ python pipelines/train_lstm_da_kfold.py --n_frames 7 --lstm_units 64 --n_folds 1
 - `--n_frames`: Número de frames por secuencia (default: 7, paper sugiere: 3, 5, 7, 9)
 - `--lstm_units`: Unidades LSTM por dirección (default: 64, paper sugiere: 16, 32, 64)
 - `--lambda_warmup`: Épocas de warm-up para lambda GRL (default: 5)
+
+---
+
+### `pipelines/generate_lstm_sequences.py` (NUEVO)
+
+Script para generar secuencias LSTM desde cache original:
+
+```bash
+# Generar secuencias para n=7 frames
+python pipelines/generate_lstm_sequences.py --n_frames 7
+
+# Generar secuencias para todos los valores (3, 5, 7, 9)
+python pipelines/generate_lstm_sequences.py --all_frames
+```
+
+**Características**:
+- Procesa cache original (`cache/original/`) para generar secuencias
+- Agrupa espectrogramas consecutivos del mismo audio en secuencias
+- Zero-padding para secuencias cortas
+- Guarda en `cache/sequences/` con formato `{dataset}_n{N}.pkl`
+- Estadísticas detalladas de secuencias generadas
+
+**Output**:
+```
+cache/sequences/
+├── healthy_n3.pkl
+├── healthy_n5.pkl
+├── healthy_n7.pkl
+├── healthy_n9.pkl
+├── parkinson_n3.pkl
+├── parkinson_n5.pkl
+├── parkinson_n7.pkl
+└── parkinson_n9.pkl
+```
+
+**Argumentos principales**:
+- `--n_frames`: Número de frames por secuencia (default: 7)
+- `--all_frames`: Generar para todos los valores [3, 5, 7, 9]
+- `--min_frames`: Mínimo de frames requeridos (default: 3)
+- `--normalize`: Re-normalizar secuencias (por defecto usa normalización ya aplicada)
 
 ---
 

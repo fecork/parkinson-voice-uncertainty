@@ -207,6 +207,47 @@ def load_sequence_cache(cache_path: str) -> Optional[Dict]:
 
 
 # ============================================================
+# DOMAIN MAPPING
+# ============================================================
+
+
+def create_domain_mapping_from_subjects(metadata_list: List) -> Dict[str, int]:
+    """
+    Crea mapeo determinístico de subject_id a domain_id (0-3) para Domain Adaptation.
+
+    Estrategia basada en paper Ibarra et al. (2023):
+    - 4 dominios fijos (GITA, Neurovoz, German, Czech)
+    - Healthy subjects: distribuir en dominios 0, 1, 2
+    - Parkinson subjects: asignar a dominio 3
+
+    Args:
+        metadata_list: Lista de metadata con subject_id
+
+    Returns:
+        Dict mapeando subject_id -> domain_id (0-3)
+    """
+    # Extraer subject_ids únicos
+    subject_ids = set()
+    for meta in metadata_list:
+        subject_ids.add(meta.subject_id)
+
+    subject_ids = sorted(list(subject_ids))  # Ordenar para determinismo
+
+    # Estrategia de mapeo:
+    # - Healthy subjects (no 1580): distribuir en dominios 0, 1, 2
+    # - Parkinson subject (1580): asignar a dominio 3
+    domain_mapping = {}
+
+    for i, subject_id in enumerate(subject_ids):
+        if subject_id == 1580:  # Parkinson subject
+            domain_mapping[subject_id] = 3
+        else:  # Healthy subjects
+            domain_mapping[subject_id] = i % 3  # Distribuir en dominios 0, 1, 2
+
+    return domain_mapping
+
+
+# ============================================================
 # PYTORCH DATASET
 # ============================================================
 
@@ -292,15 +333,13 @@ def create_sequence_dataset_from_cache(
     n_samples = len(cache_data["sequences"])
     labels = [label_value] * n_samples
 
-    # Crear domain labels (basado en vowel_type de metadata)
-    vowel_to_domain = {}
+    # Crear domain labels (basado en subject_id para 4 dominios fijos)
+    domain_mapping = create_domain_mapping_from_subjects(cache_data["metadata"])
     domain_labels = []
 
     for meta in cache_data["metadata"]:
-        vowel = meta.vowel_type
-        if vowel not in vowel_to_domain:
-            vowel_to_domain[vowel] = len(vowel_to_domain)
-        domain_labels.append(vowel_to_domain[vowel])
+        subject_id = meta.subject_id
+        domain_labels.append(domain_mapping[subject_id])
 
     return SequenceLSTMDataset(
         sequences=cache_data["sequences"],

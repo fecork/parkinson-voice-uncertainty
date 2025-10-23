@@ -335,7 +335,7 @@ def test_cnn1d_model_attention_integration():
     print("=" * 70)
 
     try:
-        from modules.cnn1d_model import CNN1D_DA
+        from modules.models.cnn1d.model import CNN1D_DA
 
         model = CNN1D_DA(in_ch=65, c1=64, c2=128, c3=128, num_domains=10)
         torch.manual_seed(0)
@@ -383,7 +383,7 @@ def test_shape_consistency_through_blocks():
     print("=" * 70)
 
     try:
-        from modules.cnn1d_model import CNN1D_DA
+        from modules.models.cnn1d.model import CNN1D_DA
 
         model = CNN1D_DA(in_ch=65, c1=64, c2=128, c3=128)
         model.eval()  # Poner en eval para evitar error de BatchNorm
