@@ -252,7 +252,6 @@ Este proyecto implementa un sistema completo de detección de Parkinson que:
 
 ---
 
-**Autor**: PHD Research Team  
+**Autor**: Wilberth Ferney Córdoba Canchala  
 **Fecha**: 2025-01-21  
-**Versión**: 4.0 (LSTM + Uncertainty + GradCAM)  
-**Estado**: Listo para revisión del profesor
+**Versión**: 4.0 (CNN + Uncertainty + GradCAM)  
