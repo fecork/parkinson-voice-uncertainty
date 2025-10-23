@@ -1,0 +1,120 @@
+{
+  "strategy": "diverse_sampling",
+  "description": "1 vocal de cada sujeto diferente",
+  "num_subjects": 13,
+  "subject_ids": [
+    97,
+    103,
+    739,
+    865,
+    1022,
+    1121,
+    1135,
+    1143,
+    1183,
+    1520,
+    1542,
+    1705,
+    2252
+  ],
+  "num_files": 13,
+  "files": [
+    {
+      "vowel": "a_lhl-egg",
+      "subject_id": 1022,
+      "filename": "1022-a_lhl-egg.egg"
+    },
+    {
+      "vowel": "u_n-egg",
+      "subject_id": 103,
+      "filename": "103-u_n-egg.egg"
+    },
+    {
+      "vowel": "u_h-egg",
+      "subject_id": 1121,
+      "filename": "1121-u_h-egg.egg"
+    },
+    {
+      "vowel": "i_n-egg",
+      "subject_id": 1135,
+      "filename": "1135-i_n-egg.egg"
+    },
+    {
+      "vowel": "a_l-egg",
+      "subject_id": 1143,
+      "filename": "1143-a_l-egg.egg"
+    },
+    {
+      "vowel": "i_lhl-egg",
+      "subject_id": 1183,
+      "filename": "1183-i_lhl-egg.egg"
+    },
+    {
+      "vowel": "i_l-egg",
+      "subject_id": 1520,
+      "filename": "1520-i_l-egg.egg"
+    },
+    {
+      "vowel": "i_h-egg",
+      "subject_id": 1542,
+      "filename": "1542-i_h-egg.egg"
+    },
+    {
+      "vowel": "a_n-egg",
+      "subject_id": 1705,
+      "filename": "1705-a_n-egg.egg"
+    },
+    {
+      "vowel": "u_lhl-egg",
+      "subject_id": 2252,
+      "filename": "2252-u_lhl-egg.egg"
+    },
+    {
+      "vowel": "iau-egg",
+      "subject_id": 739,
+      "filename": "739-iau-egg.egg"
+    },
+    {
+      "vowel": "u_l-egg",
+      "subject_id": 865,
+      "filename": "865-u_l-egg.egg"
+    },
+    {
+      "vowel": "a_h-egg",
+      "subject_id": 97,
+      "filename": "97-a_h-egg.egg"
+    }
+  ],
+  "config": {
+    "source_dir": "C:\\Users\\fecor\\Downloads\\BD Parkinson\\Saarbrücken\\healthy",
+    "output_dir": "..\\vowels_healthy",
+    "parkinson_dir": "..\\data\\vowels_pk",
+    "seed": 42,
+    "extension": "egg"
+  },
+  "parkinson_reference": {
+    "directory": "..\\data\\vowels_pk",
+    "num_vowels": 13,
+    "vowels": [
+      "a_h-egg",
+      "a_l-egg",
+      "a_lhl-egg",
+      "a_n-egg",
+      "i_h-egg",
+      "i_l-egg",
+      "i_lhl-egg",
+      "i_n-egg",
+      "iau-egg",
+      "u_h-egg",
+      "u_l-egg",
+      "u_lhl-egg",
+      "u_n-egg"
+    ]
+  },
+  "balanced": true,
+  "diversity": {
+    "unique_subjects": 13,
+    "total_files": 13,
+    "diversity_ratio": 1.0
+  }
+}

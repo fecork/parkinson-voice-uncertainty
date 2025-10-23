@@ -1,260 +1,258 @@
-# 🎯 Parkinson Voice Detection - Modular Pipeline
+# 📓 Notebooks Principales - Guía de Ejecución
 
-Detección de Enfermedad de Parkinson a partir de voz usando Domain Adaptation.
+Esta carpeta contiene los **4 notebooks principales** que deben ejecutarse en orden para el proyecto de detección de Parkinson mediante análisis de voz.
 
-## 🚀 Inicio Rápido
+## 🎯 Objetivo del Proyecto
 
-### 1. Abrir el Notebook Principal
+Implementar un sistema de clasificación binaria (Healthy vs Parkinson) usando redes neuronales convolucionales con **cuantificación de incertidumbre** y **explicabilidad** mediante GradCAM.
 
+---
+
+## 📋 Orden de Ejecución (OBLIGATORIO)
+
+### 1️⃣ **`data_preprocessing.ipynb`** - Preprocesamiento de Datos
+### 2️⃣ **`data_augmentation.ipynb`** - Augmentation de Datos  
+### 3️⃣ **`cnn_uncertainty_training.ipynb`** - Entrenamiento con Incertidumbre
+### 4️⃣ **`gradcam_inference.ipynb`** - Visualización GradCAM
+
+---
+
+## 📖 Documentación Detallada por Notebook
+
+### 1️⃣ **`data_preprocessing.ipynb`** - Preprocesamiento de Datos
+
+#### 🎯 **¿Qué hace?**
+Implementa el **preprocesamiento exacto** según el paper de Ibarra et al. (2023) para convertir archivos de audio (.egg) en espectrogramas Mel normalizados.
+
+#### 📚 **Base Científica**
+- **Paper**: Ibarra et al. (2023) - "Towards a Corpus (and Language)-Independent Screening of Parkinson's Disease from Voice and Speech through Domain Adaptation"
+- **Metodología**: Pipeline exacto sin augmentation para reproducibilidad
+
+#### ⚙️ **Pipeline de Preprocesamiento**
+1. **Resample**: 44.1 kHz (estándar de audio)
+2. **Normalización**: Por amplitud máxima absoluta
+3. **Segmentación**: Ventanas de 400ms con 50% overlap (200ms hop)
+4. **Mel Spectrogram**: 65 bandas Mel, ventana FFT 40ms, hop 10ms
+5. **Conversión**: Amplitud a dB (logarítmica)
+6. **Normalización**: Z-score por espectrograma individual
+7. **Dimensión final**: 65×41 píxeles
+
+#### 📊 **¿Qué debería ver?**
+- **Gráficas de audio**: Formas de onda originales
+- **Espectrogramas**: Visualización Mel antes/después de normalización
+- **Estadísticas**: Dimensiones, rangos de valores, distribución
+- **Cache generado**: `cache/original/healthy_ibarra.pkl` y `cache/original/parkinson_ibarra.pkl`
+
+#### ⏱️ **Tiempo estimado**: 2-3 minutos
+
+#### ✅ **Indicadores de éxito**:
+- Cache generado correctamente
+- Espectrogramas con dimensión 65×41
+- Valores normalizados (media≈0, std≈1)
+
+---
+
+### 2️⃣ **`data_augmentation.ipynb`** - Augmentation de Datos
+
+#### 🎯 **¿Qué hace?**
+Aplica **SpecAugment** a los datos Parkinson para mejorar el balance de clases y robustez del modelo.
+
+#### 📚 **Base Científica**
+- **Paper**: Park et al. (2019) - "SpecAugment: A Simple Data Augmentation Method for ASR"
+- **Técnica**: Máscaras de frecuencia y tiempo en espectrogramas
+
+#### ⚙️ **Pipeline de Augmentation**
+1. **Carga datos**: Desde cache preprocesado
+2. **SpecAugment**: Máscaras conservadoras (freq=8, time=4)
+3. **Generación**: 2 versiones augmentadas por espectrograma original
+4. **Guardado**: Dataset augmentado reutilizable
+
+#### 📊 **¿Qué debería ver?**
+- **Espectrogramas originales vs augmentados**: Comparación visual
+- **Máscaras aplicadas**: Visualización de las máscaras de SpecAugment
+- **Estadísticas de balance**: Conteo de muestras por clase
+- **Cache generado**: `cache/augmented/augmented_dataset_specaugment.pkl`
+
+#### ⏱️ **Tiempo estimado**: 1-2 minutos
+
+#### ✅ **Indicadores de éxito**:
+- Balance mejorado (más muestras Parkinson)
+- Espectrogramas augmentados visualmente diferentes
+- Cache augmentado generado
+
+---
+
+### 3️⃣ **`cnn_uncertainty_training.ipynb`** - Entrenamiento con Incertidumbre
+
+#### 🎯 **¿Qué hace?**
+Entrena una CNN con **dos tipos de incertidumbre**: epistémica (modelo) y aleatoria (datos) según Kendall & Gal (2017).
+
+#### 📚 **Base Científica**
+- **Paper**: Kendall & Gal (2017) - "What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision?"
+- **Técnica**: Heteroscedastic loss + MC Dropout
+
+#### 🏗️ **Arquitectura CNN**
+```
+Input: (B, 1, 65, 41) espectrograma
+↓
+[Feature Extractor - Ibarra 2023]
+Block1: Conv2D(32, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+Block2: Conv2D(64, 3×3) → BN → ReLU → MaxPool(3×3) → Dropout
+↓
+├─────────────────────────┬─────────────────────────┐
+│ [Prediction Head]       │ [Noise Head]            │
+│ FC(64) → ReLU → FC(2)  │ FC(64) → ReLU → FC(2)   │
+│ ↓                       │ ↓                       │
+│ logits (predicción)     │ s_logit (ruido)         │
+└─────────────────────────┴─────────────────────────┘
+```
+
+#### 🧮 **Matemática de Incertidumbre**
+1. **Epistémica (BALD)**: `H(p̄) - E[H(p_t)]` - Incertidumbre del modelo
+2. **Aleatoria**: `E[H(p_t)]` - Incertidumbre de los datos
+3. **Total**: `H(p̄) = Epistémica + Aleatoria`
+4. **Ruido**: `σ = exp(0.5 * s_logit)` - Desviación estándar
+
+#### 📊 **¿Qué debería ver?**
+- **Curvas de entrenamiento**: Loss, accuracy, F1-score
+- **Matriz de confusión**: Rendimiento por clase
+- **Histogramas de incertidumbre**: Distribución de incertidumbre por clase
+- **Reliability diagram**: Calibración del modelo
+- **Scatter plot**: Incertidumbre vs accuracy
+- **Modelo guardado**: `results/cnn_uncertainty/best_model_uncertainty.pth`
+
+#### ⏱️ **Tiempo estimado**: 15-20 minutos
+
+#### ✅ **Indicadores de éxito**:
+- Accuracy > 95%
+- Incertidumbre mayor en predicciones incorrectas
+- Modelo bien calibrado (reliability diagram)
+
+---
+
+### 4️⃣ **`gradcam_inference.ipynb`** - Visualización GradCAM
+
+#### 🎯 **¿Qué hace?**
+Genera **mapas de explicabilidad** usando GradCAM para entender qué regiones del espectrograma son importantes para la decisión del modelo.
+
+#### 📚 **Base Científica**
+- **Paper**: Selvaraju et al. (2017) - "Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization"
+- **Técnica**: Gradient-weighted Class Activation Mapping
+
+#### 🧮 **Matemática de GradCAM**
+1. **Forward pass**: Obtener activaciones de la última capa convolucional
+2. **Backward pass**: Calcular gradientes de la clase objetivo
+3. **Global Average Pooling**: `w = GAP(∂y/∂A)`
+4. **Combinación ponderada**: `CAM = ReLU(Σ w * A)`
+5. **Normalización**: `CAM = (CAM - min) / (max - min)`
+
+#### 📊 **¿Qué debería ver?**
+- **Espectrogramas originales**: Datos de entrada
+- **Mapas GradCAM**: Regiones importantes (colores cálidos)
+- **Superposiciones**: GradCAM sobre espectrograma original
+- **Comparación por clase**: Diferencias entre Healthy vs Parkinson
+- **Análisis de casos**: Predicciones correctas vs incorrectas
+
+#### ⏱️ **Tiempo estimado**: 5-10 minutos
+
+#### ✅ **Indicadores de éxito**:
+- Mapas GradCAM coherentes (regiones importantes)
+- Diferencias claras entre clases
+- Explicaciones visuales interpretables
+
+---
+
+## 🔧 Configuración del Entorno
+
+### Prerequisitos
 ```bash
-# Abrir en Jupyter/Colab
-jupyter notebook parkinson_voice_analysis.ipynb
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Verificar que los datos están en data/
+ls data/vowels_healthy/  # Archivos .egg de sujetos sanos
+ls data/vowels_pk/       # Archivos .egg de pacientes Parkinson
 ```
 
-### 2. Ejecutar Celdas en Orden
-
+### Estructura de Datos Requerida
 ```
-Celda 1  → Setup (detecta Colab/Local)
-Celda 2  → Imports (importa módulos)
-Celda 4  → Cargar archivos de audio
-Celda 7  → Procesar dataset completo
-Celda 11 → Visualizar resultados
-```
-
-### 3. Obtener Resultados
-
-Después de ejecutar la Celda 7, tendrás:
-
-```python
-# ✅ Variables disponibles:
-X_torch_complete        # (121, 1, 65, 41) - Espectrogramas
-y_task_torch_complete   # (121,) - Etiquetas de tarea
-y_domain_torch_complete # (121,) - Etiquetas de dominio
-metadata_complete       # Lista de metadatos
-torch_dataset           # PyTorch Dataset listo para DataLoader
+data/
+├── vowels_healthy/     # Archivos .egg de sujetos sanos
+│   ├── 1022-a_lhl-egg.egg
+│   ├── 103-u_n-egg.egg
+│   └── ...
+└── vowels_pk/          # Archivos .egg de pacientes Parkinson
+    ├── 1580-a_h-egg.egg
+    ├── 1580-a_l-egg.egg
+    └── ...
 ```
 
 ---
 
-## 📁 Estructura del Proyecto
+## 📊 Resultados Esperados
 
-```
-parkinson-voice-uncertainty/
-├── 📓 parkinson_voice_analysis.ipynb    ← NOTEBOOK PRINCIPAL
-├── 📦 modules/                          ← CÓDIGO REUTILIZABLE
-│   ├── preprocessing.py                 ← Preprocesamiento
-│   ├── augmentation.py                  ← Data augmentation
-│   ├── dataset.py                       ← Pipeline de dataset
-│   ├── utils.py                         ← Utilidades
-│   └── visualization.py                 ← Visualizaciones
-├── 🎵 vowels/                           ← Datos de audio
-├── 📄 GUIA_PROYECTO_MODULAR.md          ← Guía completa
-├── 📄 PROYECTO_MODULAR_RESUMEN.md       ← Resumen ejecutivo
-└── 📄 ESTRUCTURA_PROYECTO.md            ← Diagramas
-```
+### Después del Notebook 1 (Preprocesamiento)
+- **Cache generado**: `cache/original/`
+- **Espectrogramas**: 65×41 píxeles, normalizados
+- **Tiempo**: ~2-3 minutos
 
----
+### Después del Notebook 2 (Augmentation)
+- **Cache augmentado**: `cache/augmented/`
+- **Balance mejorado**: +200% muestras Parkinson
+- **Tiempo**: ~1-2 minutos
 
-## 🎓 Uso de Módulos
+### Después del Notebook 3 (Entrenamiento)
+- **Modelo entrenado**: `results/cnn_uncertainty/`
+- **Accuracy**: >95%
+- **Incertidumbre cuantificada**: Epistémica + Aleatoria
+- **Tiempo**: ~15-20 minutos
 
-### En el Notebook Principal:
-
-```python
-# Ya están importados en Celda 2
-from modules import preprocessing, dataset, visualization, utils
-
-# Usar directamente
-results = dataset.build_full_pipeline(audio_files)
-fig, audios = visualization.visualize_audio_and_spectrograms(results["dataset"])
-```
-
-### En Notebooks Nuevos:
-
-```python
-# Setup inicial
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path.cwd()))
-
-# Importar módulos
-from modules import preprocessing, dataset, visualization, utils
-
-# Usar funciones
-data_path = utils.get_data_path()
-files = utils.list_audio_files(data_path)
-results = dataset.build_full_pipeline(files)
-```
+### Después del Notebook 4 (GradCAM)
+- **Mapas de explicabilidad**: `results/cnn_uncertainty/gradcam_outputs/`
+- **Visualizaciones**: Espectrogramas + GradCAM
+- **Tiempo**: ~5-10 minutos
 
 ---
 
-## 📚 Documentación
+## 🚨 Troubleshooting
 
-| Archivo | Descripción |
-|---------|-------------|
-| **README.md** | Este archivo (inicio rápido) |
-| **GUIA_PROYECTO_MODULAR.md** | Guía completa de uso de módulos |
-| **PROYECTO_MODULAR_RESUMEN.md** | Resumen ejecutivo de la refactorización |
-| **ESTRUCTURA_PROYECTO.md** | Diagramas de arquitectura |
+### Error: "Cache not found"
+**Solución**: Ejecutar `data_preprocessing.ipynb` primero
 
----
+### Error: "Model not found"
+**Solución**: Ejecutar `cnn_uncertainty_training.ipynb` primero
 
-## 🔧 Configuración del Paper
+### Error: "Out of memory"
+**Solución**: Reducir `BATCH_SIZE` en el notebook de entrenamiento
 
-El preprocesamiento sigue exactamente las especificaciones del paper:
-
-- **Sample Rate:** 44.1 kHz
-- **Window Duration:** 400 ms
-- **Overlap:** 50%
-- **Mel Bands:** 65
-- **Hop Length:** 10 ms
-- **FFT Window:** 40 ms para /a/, 25 ms para otras vocales
-- **Target Frames:** 41
-- **Normalization:** z-score
-
-Todas las constantes están en `modules/preprocessing.py`
+### Error: "ImportError"
+**Solución**: Verificar que estás en la raíz del proyecto
 
 ---
 
-## 📦 Módulos Disponibles
+## 📚 Referencias Científicas
 
-### 1. `preprocessing.py` - Preprocesamiento de Audio
-```python
-from modules.preprocessing import preprocess_audio_paper
-spectrograms, segments = preprocess_audio_paper('audio.egg', vowel_type='a')
-```
-
-### 2. `augmentation.py` - Data Augmentation
-```python
-from modules.augmentation import spec_augment, time_stretch
-spec_aug = spec_augment(spectrogram)
-audio_aug = time_stretch(audio, rate=1.1)
-```
-
-### 3. `dataset.py` - Dataset Pipeline
-```python
-from modules.dataset import build_full_pipeline
-results = build_full_pipeline(audio_files)
-X, y_task, y_domain = results["tensors"]
-```
-
-### 4. `utils.py` - Utilidades
-```python
-from modules import utils
-data_path = utils.get_data_path()  # Auto-detecta Colab/Local
-files = utils.list_audio_files(data_path)
-```
-
-### 5. `visualization.py` - Visualizaciones
-```python
-from modules.visualization import visualize_audio_and_spectrograms
-fig, audios = visualize_audio_and_spectrograms(dataset, num_samples=3)
-```
+1. **Ibarra et al. (2023)**: "Towards a Corpus (and Language)-Independent Screening of Parkinson's Disease from Voice and Speech through Domain Adaptation"
+2. **Kendall & Gal (2017)**: "What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision?"
+3. **Selvaraju et al. (2017)**: "Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization"
+4. **Park et al. (2019)**: "SpecAugment: A Simple Data Augmentation Method for ASR"
 
 ---
 
-## 🐛 Troubleshooting
+## 🎯 Resumen Ejecutivo
 
-### "ModuleNotFoundError: No module named 'modules'"
+Este proyecto implementa un sistema completo de detección de Parkinson que:
 
-```python
-# Solución: Agregar módulos al path
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path.cwd()))
+1. **Preprocesa** audio según estándares científicos (Ibarra 2023)
+2. **Aumenta** datos para mejorar robustez (SpecAugment)
+3. **Entrena** CNN con cuantificación de incertidumbre (Kendall & Gal 2017)
+4. **Explica** decisiones mediante GradCAM (Selvaraju 2017)
 
-# Ahora importar
-from modules import preprocessing
-```
-
-### Los cambios en módulos no se reflejan
-
-```python
-# Solución: Reiniciar kernel del notebook
-# Runtime → Restart runtime
-
-# O recargar módulo
-import importlib
-importlib.reload(preprocessing)
-```
+**Resultado**: Sistema de clasificación con >95% accuracy, incertidumbre cuantificada y explicabilidad visual.
 
 ---
 
-## 💡 Ejemplos de Uso
-
-### Procesar un solo archivo:
-```python
-from modules.preprocessing import preprocess_audio_paper
-specs, segs = preprocess_audio_paper('vowels/1580-a_h-egg.egg', vowel_type='a_h')
-```
-
-### Procesar todos los archivos:
-```python
-from modules import dataset, utils
-audio_files = utils.list_audio_files('./vowels')
-results = dataset.build_full_pipeline(audio_files)
-```
-
-### Visualizar resultados:
-```python
-from modules.visualization import visualize_audio_and_spectrograms
-fig, audios = visualize_audio_and_spectrograms(results["dataset"], num_samples=5)
-```
-
-### Aplicar augmentation:
-```python
-from modules.augmentation import spec_augment
-spec_aug = spec_augment(spectrogram, freq_mask_param=10)
-```
-
----
-
-## 🎓 Ventajas de Esta Arquitectura
-
-✅ **Modular** - Cada módulo tiene una responsabilidad clara
-✅ **Reutilizable** - Importar en cualquier notebook
-✅ **Mantenible** - Cambiar en un solo lugar
-✅ **Testeable** - Tests unitarios posibles
-✅ **Profesional** - Type hints, docstrings, PEP 8
-✅ **Escalable** - Fácil agregar nuevas funcionalidades
-✅ **Sin Duplicación** - 0% de código duplicado
-
----
-
-## 📊 Estadísticas del Código
-
-- **Módulos Python:** 5 archivos (.py)
-- **Total líneas de código:** 1,815 líneas
-- **Código duplicado:** 0 líneas ✅
-- **Funciones en módulos:** 40+
-- **Notebooks:** 1 principal (limpio y conciso)
-
----
-
-## 🔜 Próximos Pasos
-
-1. ✅ **Preprocesamiento** - Completado
-2. ✅ **Dataset Pipeline** - Completado
-3. ✅ **Visualización** - Completado
-4. 🔜 **Data Augmentation** - Crear notebook 02
-5. 🔜 **Model Training** - Crear notebook 03
-6. 🔜 **Evaluation** - Crear notebook 04
-
----
-
-## 📞 Soporte
-
-Para más información:
-- Ver **GUIA_PROYECTO_MODULAR.md** para uso detallado
-- Ver **PROYECTO_MODULAR_RESUMEN.md** para resumen ejecutivo
-- Ver **ESTRUCTURA_PROYECTO.md** para diagramas
-
----
-
-## 📄 Licencia
-
-[Tu licencia aquí]
-
----
-
-**¡El proyecto está listo para desarrollo profesional!** 🚀
-
+**Autor**: PHD Research Team  
+**Fecha**: 2025-01-21  
+**Versión**: 4.0 (LSTM + Uncertainty + GradCAM)  
+**Estado**: Listo para revisión del profesor
