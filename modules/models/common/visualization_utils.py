@@ -345,3 +345,5 @@ def plot_metrics_comparison(
         plt.close()
     
     return fig
+
+

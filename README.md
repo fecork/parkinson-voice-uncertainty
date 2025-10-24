@@ -10,6 +10,7 @@ Implementar un sistema de clasificación binaria (Healthy vs Parkinson) usando r
 
 ## 📋 Orden de Ejecución (OBLIGATORIO)
 
+### 0️⃣ **`svdd_data_preparation.ipynb`** - Preparación de Datos SVDD (OPCIONAL)
 ### 1️⃣ **`data_preprocessing.ipynb`** - Preprocesamiento de Datos
 ### 2️⃣ **`data_augmentation.ipynb`** - Augmentation de Datos  
 ### 3️⃣ **`cnn_uncertainty_training.ipynb`** - Entrenamiento con Incertidumbre
@@ -18,6 +19,72 @@ Implementar un sistema de clasificación binaria (Healthy vs Parkinson) usando r
 ---
 
 ## 📖 Documentación Detallada por Notebook
+
+### 0️⃣ **`svdd_data_preparation.ipynb`** - Preparación de Datos SVDD (OPCIONAL)
+
+#### 🎯 **¿Qué hace?**
+Prepara y organiza el dataset SVDD (Saarbrücken Voice Database) desde archivos ZIP anidados, filtrando solo archivos de vocal `/a/` y creando un dataset balanceado para entrenamiento.
+
+#### 📚 **Base Científica**
+- **Dataset**: SVDD - Saarbrücken Voice Database
+- **Propósito**: Expandir el dataset con voces patológicas y sanas adicionales
+- **Metodología**: Filtrado por vocal /a/, conversión NSP→WAV, balanceado de clases
+
+#### ⚙️ **Pipeline de Preparación**
+1. **Exploración**: Análisis de estructura de ZIPs anidados
+2. **Filtrado**: Solo archivos `.nsp` con vocal `/a/` (patrón `-a_` o `a.`)
+3. **Extracción**: Conversión de archivos `.nsp` a `.wav` (44.1 kHz mono)
+4. **Balanceado**: Distribución equitativa entre Healthy y Pathological
+5. **Organización**: Estructura final `/data/svdd_processed/`
+
+#### 📊 **¿Qué debería ver?**
+- **Exploración de ZIPs**: Lista de patologías encontradas
+- **Progreso de extracción**: Archivos procesados por patología
+- **Estadísticas de balance**: Conteo de archivos por clase
+- **Estructura final**: `/data/svdd_processed/healthy/` y `/data/svdd_processed/pathological/`
+- **Metadata**: `metadata.json` con información del proceso
+
+#### ⏱️ **Tiempo estimado**: 30-60 minutos (dependiendo del tamaño del ZIP)
+
+#### ✅ **Indicadores de éxito**:
+- Archivos `.wav` generados en `/data/svdd_processed/`
+- Balance aproximado entre clases (Healthy vs Pathological)
+- Metadata JSON generado con estadísticas
+- Proceso resumible (puede continuar si se interrumpe)
+
+#### 🔧 **Configuración Requerida**:
+```python
+# Ruta al ZIP de SVDD (cambiar según ubicación)
+ZIP_PATH = r"C:\Users\fecor\Downloads\16874898.zip"
+
+# Patrón para filtrar vocal /a/
+VOWEL_PATTERN = r'-a_|a\.'
+
+# Parámetros de audio
+TARGET_SAMPLE_RATE = 44100  # 44.1 kHz
+```
+
+#### 📁 **Estructura de Salida**:
+```
+data/svdd_processed/
+├── healthy/
+│   ├── archivo1.wav
+│   ├── archivo2.wav
+│   └── ... (archivos de voces sanas)
+├── pathological/
+│   ├── archivo1.wav
+│   ├── archivo2.wav
+│   └── ... (archivos de voces patológicas)
+└── metadata.json
+```
+
+#### 🚨 **Notas Importantes**:
+- **Proceso resumible**: Si se interrumpe, puede continuar desde donde se quedó
+- **Filtrado automático**: Solo procesa archivos con vocal `/a/`
+- **Balanceado inteligente**: Distribuye muestras de diferentes patologías
+- **Saltar data.zip**: Automáticamente salta el ZIP problemático
+
+---
 
 ### 1️⃣ **`data_preprocessing.ipynb`** - Preprocesamiento de Datos
 
@@ -175,6 +242,8 @@ ls data/vowels_pk/       # Archivos .egg de pacientes Parkinson
 ```
 
 ### Estructura de Datos Requerida
+
+#### **Datos Básicos (Requeridos)**
 ```
 data/
 ├── vowels_healthy/     # Archivos .egg de sujetos sanos
@@ -187,9 +256,28 @@ data/
     └── ...
 ```
 
+#### **Datos SVDD (Opcionales - se generan con svdd_data_preparation.ipynb)**
+```
+data/
+└── svdd_processed/       # Dataset SVDD procesado
+    ├── healthy/          # Archivos .wav de voces sanas SVDD
+    │   ├── archivo1.wav
+    │   └── ...
+    ├── pathological/     # Archivos .wav de voces patológicas SVDD
+    │   ├── archivo1.wav
+    │   └── ...
+    └── metadata.json     # Metadata del proceso SVDD
+```
+
 ---
 
 ## 📊 Resultados Esperados
+
+### Después del Notebook 0 (Preparación SVDD - OPCIONAL)
+- **Dataset SVDD**: `/data/svdd_processed/` con archivos `.wav`
+- **Balance de clases**: Healthy vs Pathological
+- **Metadata**: `metadata.json` con estadísticas del proceso
+- **Tiempo**: ~30-60 minutos
 
 ### Después del Notebook 1 (Preprocesamiento)
 - **Cache generado**: `cache/original/`
@@ -227,6 +315,12 @@ data/
 
 ### Error: "ImportError"
 **Solución**: Verificar que estás en la raíz del proyecto
+
+### Error: "ZIP not found" (SVDD)
+**Solución**: Verificar que `ZIP_PATH` apunta al archivo correcto en `svdd_data_preparation.ipynb`
+
+### Error: "Proceso SVDD se interrumpe"
+**Solución**: El notebook es resumible, simplemente ejecutarlo nuevamente continuará desde donde se quedó
 
 ---
 

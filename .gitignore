@@ -35,3 +35,13 @@ Thumbs.db
 # *.egg
 # *.nsp
 
+# Audio files
+*.wav
+*.mp3
+*.flac
+*.aac
+
+# Temporary processing files
+notebooks/temp/
+*.nsp
+
