@@ -104,29 +104,41 @@ class FeatureExtractor(nn.Module):
         self,
         p_drop_conv: float = 0.3,
         input_shape: Tuple[int, int] = (65, 41),
+        filters_1: int = 32,
+        filters_2: int = 64,
+        kernel_size_1: int = 3,
+        kernel_size_2: int = 3,
     ):
         """
         Args:
             p_drop_conv: Probabilidad de dropout en capas convolucionales
             input_shape: Dimensiones de entrada (H, W)
+            filters_1: Número de filtros en primera capa convolucional
+            filters_2: Número de filtros en segunda capa convolucional
+            kernel_size_1: Tamaño del kernel en primera capa convolucional
+            kernel_size_2: Tamaño del kernel en segunda capa convolucional
         """
         super().__init__()
         self.p_drop_conv = p_drop_conv
         self.input_shape = input_shape
+        self.filters_1 = filters_1
+        self.filters_2 = filters_2
+        self.kernel_size_1 = kernel_size_1
+        self.kernel_size_2 = kernel_size_2
 
-        # Bloque 1: (B, 1, H, W) → (B, 32, H', W')
+        # Bloque 1: (B, 1, H, W) → (B, filters_1, H', W')
         self.block1 = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(1, filters_1, kernel_size=kernel_size_1, padding=kernel_size_1//2),
+            nn.BatchNorm2d(filters_1),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),  # 3×3 (paper)
             nn.Dropout2d(p=p_drop_conv),
         )
 
-        # Bloque 2: (B, 32, H', W') → (B, 64, H'', W'')
+        # Bloque 2: (B, filters_1, H', W') → (B, filters_2, H'', W'')
         self.block2 = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(filters_1, filters_2, kernel_size=kernel_size_2, padding=kernel_size_2//2),
+            nn.BatchNorm2d(filters_2),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),  # 3×3 (paper)
             nn.Dropout2d(p=p_drop_conv),

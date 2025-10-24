@@ -47,6 +47,11 @@ class CNN2D(nn.Module):
         p_drop_conv: float = 0.3,
         p_drop_fc: float = 0.5,
         input_shape: Tuple[int, int] = (65, 41),
+        filters_1: int = 32,
+        filters_2: int = 64,
+        kernel_size_1: int = 3,
+        kernel_size_2: int = 3,
+        dense_units: int = 64,
     ):
         """
         Args:
@@ -54,6 +59,11 @@ class CNN2D(nn.Module):
             p_drop_conv: Dropout en capas convolucionales
             p_drop_fc: Dropout en capas fully connected
             input_shape: Dimensiones de entrada (H, W)
+            filters_1: Número de filtros en primera capa convolucional
+            filters_2: Número de filtros en segunda capa convolucional
+            kernel_size_1: Tamaño del kernel en primera capa convolucional
+            kernel_size_2: Tamaño del kernel en segunda capa convolucional
+            dense_units: Número de unidades en capa densa oculta
         """
         super().__init__()
 
@@ -61,16 +71,26 @@ class CNN2D(nn.Module):
         self.p_drop_conv = p_drop_conv
         self.p_drop_fc = p_drop_fc
         self.input_shape = input_shape
+        self.filters_1 = filters_1
+        self.filters_2 = filters_2
+        self.kernel_size_1 = kernel_size_1
+        self.kernel_size_2 = kernel_size_2
+        self.dense_units = dense_units
 
         # Feature extractor (compartido con CNN2D_DA)
         self.feature_extractor = FeatureExtractor(
-            p_drop_conv=p_drop_conv, input_shape=input_shape
+            p_drop_conv=p_drop_conv,
+            input_shape=input_shape,
+            filters_1=filters_1,
+            filters_2=filters_2,
+            kernel_size_1=kernel_size_1,
+            kernel_size_2=kernel_size_2,
         )
 
         # PD Head (clasificación Parkinson)
         self.pd_head = ClassifierHead(
             feature_dim=self.feature_extractor.feature_dim,
-            hidden_dim=64,
+            hidden_dim=dense_units,
             n_classes=n_classes,
             p_drop_fc=p_drop_fc,
         )
