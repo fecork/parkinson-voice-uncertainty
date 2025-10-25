@@ -7,6 +7,7 @@ Este módulo centralizado proporciona funcionalidades reutilizables para optimiz
 ```
 modules/core/
 ├── __init__.py                    # Exports principales
+├── environment.py                # Detección de entorno (Local/Colab)
 ├── talos_optimization.py         # Sistema centralizado de Talos
 ├── model_evaluation.py           # Evaluación y comparación de modelos
 └── README.md                      # Esta documentación
@@ -14,7 +15,14 @@ modules/core/
 
 ## Características Principales
 
-### 1. Sistema Centralizado de Talos
+### 1. Detección de Entorno y Configuración de Rutas
+
+- **Detección automática**: Identifica si el código corre en Local o Colab
+- **Rutas dinámicas**: Configura automáticamente rutas según el entorno
+- **Google Drive**: Funciones para montar y usar Google Drive en Colab
+- **Portabilidad**: Mismo código funciona en local y Colab sin cambios
+
+### 2. Sistema Centralizado de Talos
 
 - **TalosOptimizer**: Clase principal para optimización con Talos
 - **TalosModelWrapper**: Interfaz abstracta para wrappers de modelos
@@ -34,6 +42,66 @@ modules/core/
 - Funciones de conveniencia
 
 ## Uso Básico
+
+### Configuración de Entorno
+
+```python
+from modules.core.environment import setup_environment
+
+# Detectar entorno automáticamente y configurar rutas
+ENV, PATHS = setup_environment(verbose=True)
+
+# Usar las rutas en tu código
+cache_healthy = PATHS['cache_original'] / "healthy_ibarra.pkl"
+cache_parkinson = PATHS['cache_augmented'] / "augmented_dataset.pkl"
+results_dir = PATHS['results'] / "mi_experimento"
+
+# El mismo código funciona en Local y en Colab
+print(f"Entorno: {ENV}")  # 'local' o 'colab'
+print(f"Ruta de cache: {cache_healthy}")
+```
+
+**Características importantes:**
+- **Búsqueda automática de raíz**: En local, encuentra automáticamente la raíz del proyecto aunque ejecutes desde subdirectorios (como `research/` o `notebooks/`)
+- **Sin configuración manual**: No necesitas especificar rutas, todo se detecta automáticamente
+- **Funciona desde cualquier lugar**: Ejecuta notebooks desde cualquier carpeta del proyecto
+
+**En Local:**
+```
+CONFIGURACIÓN DE ENTORNO
+======================================================================
+Entorno detectado: LOCAL
+Ruta base: /path/to/parkinson-voice-uncertainty
+Cache original: /path/to/parkinson-voice-uncertainty/cache/original
+Cache augmented: /path/to/parkinson-voice-uncertainty/cache/augmented
+
+MODO LOCAL: Usando rutas relativas
+======================================================================
+```
+
+**En Colab:**
+```
+CONFIGURACIÓN DE ENTORNO
+======================================================================
+Entorno detectado: COLAB
+Ruta base: /content/drive/Othercomputers/ZenBook/parkinson-voice-uncertainty
+Cache original: /content/drive/Othercomputers/.../cache/original
+Cache augmented: /content/drive/Othercomputers/.../cache/augmented
+
+MODO COLAB: Usando rutas de Google Drive
+======================================================================
+```
+
+### Montar Google Drive en Colab
+
+```python
+from modules.core.environment import mount_google_drive
+
+# Montar Google Drive automáticamente si estás en Colab
+if mount_google_drive(verbose=True):
+    ENV, PATHS = setup_environment()
+    # Ahora puedes acceder a tus archivos
+```
 
 ### Para CNN2D
 

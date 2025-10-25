@@ -1,19 +1,99 @@
 """
 Plantilla de configuración para notebooks.
 
-Este módulo proporciona una función simple que todos los notebooks
+Este módulo proporciona funciones simples que todos los notebooks
 pueden usar para configurar su entorno automáticamente.
 
 Uso en cualquier notebook:
-    from modules.core.notebook_setup import setup_environment
-    setup_environment()
+    from modules.core.notebook_setup import setup_notebook
+    ENV, PATHS = setup_notebook()
 """
 
 import os
 import sys
 import subprocess
+from pathlib import Path
+from typing import Tuple, Dict
 
 from modules.core.dependency_manager import setup_notebook_environment
+
+
+def add_project_to_path() -> Path:
+    """
+    Agrega la raíz del proyecto al sys.path.
+
+    Busca hacia arriba desde el directorio actual hasta encontrar
+    la raíz del proyecto (identificada por la carpeta modules/).
+
+    Returns:
+        Path: Ruta a la raíz del proyecto
+
+    Raises:
+        FileNotFoundError: Si no se encuentra la raíz del proyecto
+    """
+    current_dir = Path.cwd()
+
+    # Buscar hacia arriba hasta encontrar la raíz
+    for _ in range(10):
+        if (current_dir / "modules").exists():
+            if str(current_dir) not in sys.path:
+                sys.path.insert(0, str(current_dir))
+            return current_dir
+
+        parent = current_dir.parent
+        if parent == current_dir:  # Llegamos a la raíz del sistema
+            break
+        current_dir = parent
+
+    raise FileNotFoundError(
+        "No se pudo encontrar la raíz del proyecto. "
+        "Asegúrate de que la carpeta 'modules/' existe."
+    )
+
+
+def setup_notebook(verbose: bool = True) -> Tuple[str, Dict[str, Path]]:
+    """
+    Configuración completa para notebooks (path + environment + rutas).
+
+    Esta es la función principal que deben llamar los notebooks al inicio.
+    Configura:
+    - Agrega la raíz del proyecto al sys.path
+    - Detecta si está en Local o Colab
+    - Configura las rutas del proyecto
+
+    Args:
+        verbose: Si True, muestra información detallada
+
+    Returns:
+        tuple: (environment, paths) donde:
+            - environment (str): 'local' o 'colab'
+            - paths (dict): Diccionario con rutas del proyecto
+
+    Example:
+        ```python
+        # Al inicio de cualquier notebook
+        from modules.core.notebook_setup import setup_notebook
+
+        ENV, PATHS = setup_notebook()
+
+        # Usar las rutas
+        cache_path = PATHS['cache_original'] / "data.pkl"
+        ```
+    """
+    # Agregar proyecto al path
+    try:
+        project_root = add_project_to_path()
+        if verbose:
+            print(f"Raíz del proyecto agregada al path: {project_root}")
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        raise
+
+    # Importar aquí después de agregar al path
+    from modules.core.environment import setup_environment as env_setup
+
+    # Configurar entorno y rutas
+    return env_setup(verbose=verbose)
 
 
 def setup_environment(verbose: bool = True) -> bool:
