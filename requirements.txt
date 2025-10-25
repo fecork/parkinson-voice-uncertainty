@@ -1,0 +1,34 @@
+# Core dependencies
+torch>=1.9.0
+torchvision>=0.10.0
+numpy>=1.21.0
+pandas>=1.3.0
+scikit-learn>=1.0.0
+matplotlib>=3.4.0
+seaborn>=0.11.0
+
+# Data processing
+librosa>=0.8.1
+soundfile>=0.10.3
+scipy>=1.7.0
+
+# Hyperparameter optimization
+talos>=0.6.5
+
+# Jupyter and visualization
+jupyter>=1.0.0
+ipywidgets>=7.6.0
+plotly>=5.0.0
+
+# Utilities
+tqdm>=4.62.0
+pathlib2>=2.3.6
+json5>=0.9.0
+
+# Optional: GPU support (uncomment if using CUDA)
+# torch-audio>=0.9.0
+# torchaudio>=0.9.0
+
+# Development and testing
+pytest>=6.2.0
+pytest-cov>=2.12.0

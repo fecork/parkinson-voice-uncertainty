@@ -1,0 +1,17 @@
+{
+  "f1": 0.88,
+  "accuracy": 0.88,
+  "precision": 0.87,
+  "recall": 0.89,
+  "val_loss": 0.22,
+  "train_loss": 0.32,
+  "batch_size": 64,
+  "p_drop_conv": 0.5,
+  "p_drop_fc": 0.5,
+  "filters_1": 128,
+  "filters_2": 256,
+  "kernel_size_1": 8,
+  "kernel_size_2": 9,
+  "dense_units": 128,
+  "learning_rate": 0.0001
+}

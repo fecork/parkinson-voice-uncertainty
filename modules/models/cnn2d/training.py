@@ -29,7 +29,11 @@ from sklearn.metrics import (
 
 
 # EarlyStopping movida a modules.models.common.layers
-from ..common.training_utils import EarlyStopping, compute_metrics, compute_class_weights_auto
+from ..common.training_utils import (
+    EarlyStopping,
+    compute_metrics,
+    compute_class_weights_auto,
+)
 
 
 # ============================================================
@@ -166,6 +170,7 @@ def train_model(
     early_stopping_patience: int = 10,
     save_dir: Optional[Path] = None,
     verbose: bool = True,
+    scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
 ) -> Dict:
     """
     Pipeline completo de entrenamiento.
@@ -181,6 +186,7 @@ def train_model(
         early_stopping_patience: Paciencia para early stopping
         save_dir: Directorio para guardar checkpoints
         verbose: Si True, imprime progreso
+        scheduler: Scheduler opcional para ajuste de learning rate
 
     Returns:
         Dict con historial de entrenamiento y mejor modelo
@@ -237,6 +243,10 @@ def train_model(
         history["val_loss"].append(val_metrics["loss"])
         history["val_acc"].append(val_metrics["accuracy"])
         history["val_f1"].append(val_metrics["f1"])
+
+        # Actualizar scheduler si está disponible
+        if scheduler is not None:
+            scheduler.step(val_metrics["loss"])
 
         # Guardar mejor modelo
         if val_metrics["loss"] < best_val_loss:

@@ -1,10 +1,61 @@
-# 📓 Notebooks Principales - Guía de Ejecución
+# 🧠 Parkinson Voice Uncertainty - Sistema de Detección con Incertidumbre
 
-Esta carpeta contiene los **4 notebooks principales** que deben ejecutarse en orden para el proyecto de detección de Parkinson mediante análisis de voz.
+Sistema completo de detección de Parkinson mediante análisis de voz usando redes neuronales convolucionales con **cuantificación de incertidumbre** y **optimización automática de hiperparámetros**.
 
 ## 🎯 Objetivo del Proyecto
 
-Implementar un sistema de clasificación binaria (Healthy vs Parkinson) usando redes neuronales convolucionales con **cuantificación de incertidumbre** y **explicabilidad** mediante GradCAM.
+Implementar un sistema de clasificación binaria (Healthy vs Parkinson) usando:
+- **CNN2D** con optimización automática de hiperparámetros (Talos)
+- **Cuantificación de incertidumbre** (Epistemic + Aleatoric)
+- **Explicabilidad** mediante GradCAM
+- **Data Augmentation** para mejorar generalización
+
+## 🚀 Instalación Rápida
+
+### Opción 1: Instalación Automática
+```bash
+# Clonar el repositorio
+git clone <repository-url>
+cd parkinson-voice-uncertainty
+
+# Instalar dependencias automáticamente
+python install_dependencies.py
+
+# O instalar manualmente
+pip install -r requirements.txt
+```
+
+### Opción 2: Google Colab
+```python
+# En Colab, ejecutar la primera celda del notebook
+# Se instalarán automáticamente todas las dependencias
+```
+
+### Opción 3: Configuración Automática en Notebooks
+```python
+# Al inicio de cualquier notebook, usar:
+from modules.core.dependency_manager import setup_notebook_environment
+
+# Configurar entorno automáticamente
+setup_notebook_environment()
+```
+
+## 🔧 Gestión de Dependencias
+
+El proyecto incluye un **sistema centralizado de gestión de dependencias** que:
+
+- ✅ **Detecta automáticamente** el entorno (Colab vs Local)
+- ✅ **Instala dependencias faltantes** automáticamente
+- ✅ **Evita duplicidad de código** entre notebooks
+- ✅ **Maneja errores** de instalación gracefully
+
+### Módulos Principales:
+- `modules/core/dependency_manager.py` - Gestión centralizada
+- `modules/core/notebook_setup.py` - Plantilla para notebooks
+- `install_dependencies.py` - Script de instalación
+- `requirements.txt` - Lista de dependencias
+
+## 📋 Notebooks Principales
 
 ---
 
@@ -13,8 +64,9 @@ Implementar un sistema de clasificación binaria (Healthy vs Parkinson) usando r
 ### 0️⃣ **`svdd_data_preparation.ipynb`** - Preparación de Datos SVDD (OPCIONAL)
 ### 1️⃣ **`data_preprocessing.ipynb`** - Preprocesamiento de Datos
 ### 2️⃣ **`data_augmentation.ipynb`** - Augmentation de Datos  
-### 3️⃣ **`cnn_uncertainty_training.ipynb`** - Entrenamiento con Incertidumbre
-### 4️⃣ **`gradcam_inference.ipynb`** - Visualización GradCAM
+### 3️⃣ **`cnn_training.ipynb`** - Entrenamiento CNN2D con Talos (NUEVO)
+### 4️⃣ **`cnn_uncertainty_training.ipynb`** - Entrenamiento con Incertidumbre
+### 5️⃣ **`gradcam_inference.ipynb`** - Visualización GradCAM
 
 ---
 
@@ -333,16 +385,19 @@ data/
 
 ---
 
-## 🎯 Resumen Ejecutivo
+## 🎯 Pruebas Unitarias
 
-Este proyecto implementa un sistema completo de detección de Parkinson que:
 
-1. **Preprocesa** audio según estándares científicos (Ibarra 2023)
-2. **Aumenta** datos para mejorar robustez (SpecAugment)
-3. **Entrena** CNN con cuantificación de incertidumbre (Kendall & Gal 2017)
-4. **Explica** decisiones mediante GradCAM (Selvaraju 2017)
+# 1. Validar notebook actual
+python test/validate_paper_replication.py research/cnn_training.ipynb
 
-**Resultado**: Sistema de clasificación con >95% accuracy, incertidumbre cuantificada y explicabilidad visual.
+# 2. Ejecutar pruebas unitarias
+pytest test/test_paper_compliance.py -v
+
+python -m pytest test/test_talos_*.py -v --tb=short
+
+# 3. Ver reporte detallado
+cat test/PAPER_VALIDATION_REPORT.md
 
 ---
 
