@@ -111,6 +111,17 @@ class CNN2DOptunaWrapper(OptunaModelWrapper):
         Returns:
             tuple: (f1_score_final, dict_metricas)
         """
+        # Ensure optuna is available in local scope
+        try:
+            import optuna
+        except ImportError:
+            optuna = None
+
+        # Store optuna.TrialPruned for safe access
+        TrialPruned = None
+        if optuna is not None:
+            TrialPruned = optuna.TrialPruned
+
         # Obtener hiperparámetros del trial
         params = trial.params
 
@@ -190,7 +201,12 @@ class CNN2DOptunaWrapper(OptunaModelWrapper):
 
             # Verificar si el trial debe ser podado
             if trial.should_prune():
-                raise optuna.TrialPruned()
+                if TrialPruned is not None:
+                    raise TrialPruned()
+                else:
+                    # Si optuna no está disponible, simplemente retornar el mejor valor
+                    print("Warning: optuna.TrialPruned no disponible, continuando...")
+                    return best_f1, best_metrics
 
         return best_f1, best_metrics
 
