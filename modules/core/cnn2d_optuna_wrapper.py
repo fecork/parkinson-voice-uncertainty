@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from typing import Dict, Tuple, Any
+import optuna
 from optuna.trial import Trial
 
 from modules.core.optuna_optimization import OptunaModelWrapper, OptunaOptimizer
