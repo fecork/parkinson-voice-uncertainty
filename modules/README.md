@@ -180,6 +180,51 @@ Funciones auxiliares y utilidades comunes.
 
 ---
 
+### 🚀 `notebook_setup.py`
+**Configuración automática de entornos para notebooks**
+
+**Funciones principales**:
+
+#### `setup_environment(verbose=True)`
+Configuración rápida para notebooks locales:
+```python
+from modules.core.notebook_setup import setup_environment
+
+# Configurar entorno local automáticamente
+setup_environment()
+```
+
+#### `setup_colab_git(computer_name, project_dir, branch)`
+Configuración completa para Google Colab con Git:
+```python
+from modules.core.notebook_setup import setup_colab_git
+
+# Configuración por defecto
+project_path = setup_colab_git()
+
+# Configuración personalizada
+project_path = setup_colab_git(
+    computer_name="ZenBook",
+    project_dir="parkinson-voice-uncertainty",
+    branch="main"
+)
+```
+
+**Características**:
+- Monta Google Drive automáticamente
+- Configura repositorio Git y cambia de rama
+- Actualiza código desde repositorio remoto
+- Instala dependencias del `requirements.txt`
+- Activa autoreload para notebooks
+- Manejo de errores robusto
+
+**Parámetros**:
+- `computer_name`: Nombre del PC en Google Drive
+- `project_dir`: Carpeta del repositorio
+- `branch`: Rama de Git a usar (main, dev, etc.)
+
+---
+
 ## 💡 Cómo Usar los Módulos
 
 ### En Notebooks

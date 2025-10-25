@@ -25,13 +25,30 @@ python install_dependencies.py
 pip install -r requirements.txt
 ```
 
-### Opción 2: Google Colab
+### Opción 2: Google Colab con Git
 ```python
-# En Colab, ejecutar la primera celda del notebook
-# Se instalarán automáticamente todas las dependencias
+# Setup completo en Colab con Drive y Git
+from modules.core.notebook_setup import setup_colab_git
+
+# Configuración por defecto (ZenBook, main branch)
+project_path = setup_colab_git()
+
+# Configuración personalizada
+project_path = setup_colab_git(
+    computer_name="MiPC",
+    project_dir="parkinson-voice-uncertainty",
+    branch="dev"
+)
 ```
 
-### Opción 3: Configuración Automática en Notebooks
+Esta función:
+- Monta Google Drive automáticamente
+- Configura Git y cambia a la rama especificada
+- Instala todas las dependencias del `requirements.txt`
+- Activa autoreload para notebooks
+- Retorna la ruta del proyecto configurado
+
+### Opción 3: Configuración Automática en Notebooks (Local)
 ```python
 # Al inicio de cualquier notebook, usar:
 from modules.core.dependency_manager import setup_notebook_environment
