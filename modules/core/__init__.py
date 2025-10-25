@@ -1,29 +1,25 @@
 """
 Core Module for Hyperparameter Optimization
 ===========================================
-Módulo central para optimización de hiperparámetros con Talos.
+Módulo central para optimización de hiperparámetros con Optuna.
 
 Este módulo proporciona funcionalidades reutilizables para:
-- Búsqueda de hiperparámetros con Talos
+- Búsqueda de hiperparámetros con Optuna
 - Evaluación de modelos
 - Análisis de resultados
 - Integración con diferentes arquitecturas
 
 Módulos:
-- talos_optimization: Funciones base para optimización
+- optuna_optimization: Funciones base para optimización
 - model_evaluation: Evaluación y comparación de modelos
 - preprocessing: Preprocesamiento de audio
 - dataset: Manejo de datasets
 - visualization: Visualización de datos
 """
 
-from .talos_optimization import (
-    TalosOptimizer,
-    get_default_search_params,
-    create_talos_model_wrapper,
-    evaluate_best_model,
-    analyze_hyperparameter_importance,
-    print_optimization_summary,
+from .optuna_optimization import (
+    OptunaOptimizer,
+    OptunaModelWrapper,
 )
 
 from .model_evaluation import (
@@ -64,13 +60,14 @@ from .visualization import (
     save_figure,
 )
 
+# Import utility functions
+from .utils import (
+    create_10fold_splits_by_speaker,
+)
+
 __all__ = [
-    "TalosOptimizer",
-    "get_default_search_params",
-    "create_talos_model_wrapper",
-    "evaluate_best_model",
-    "analyze_hyperparameter_importance",
-    "print_optimization_summary",
+    "OptunaOptimizer",
+    "OptunaModelWrapper",
     "ModelEvaluator",
     "compare_models",
     "save_model_results",
@@ -98,4 +95,6 @@ __all__ = [
     "plot_confusion_matrix",
     "create_audio_player",
     "save_figure",
+    # Utility functions
+    "create_10fold_splits_by_speaker",
 ]

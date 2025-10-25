@@ -29,7 +29,7 @@ REQUIRED_MODULES = {
     "seaborn": "Seaborn",
     "librosa": "Librosa",
     "soundfile": "SoundFile",
-    "talos": "Talos",
+    "optuna": "Optuna",
     "jupyter": "Jupyter",
 }
 
@@ -44,7 +44,7 @@ BASIC_DEPENDENCIES = [
     "seaborn>=0.11.0",
     "librosa>=0.8.1",
     "soundfile>=0.10.3",
-    "talos>=0.6.5",
+    "optuna>=3.0.0",
     "jupyter>=1.0.0",
     "tqdm>=4.62.0",
 ]

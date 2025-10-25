@@ -171,6 +171,7 @@ def train_model(
     save_dir: Optional[Path] = None,
     verbose: bool = True,
     scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
+    monitor_metric: str = "f1",  # NUEVO: métrica a monitorear ("loss" o "f1")
 ) -> Dict:
     """
     Pipeline completo de entrenamiento.
@@ -187,6 +188,8 @@ def train_model(
         save_dir: Directorio para guardar checkpoints
         verbose: Si True, imprime progreso
         scheduler: Scheduler opcional para ajuste de learning rate
+        monitor_metric: Métrica para early stopping ("loss" o "f1")
+                       Default: "f1" (recomendado para datasets desbalanceados)
 
     Returns:
         Dict con historial de entrenamiento y mejor modelo
@@ -196,9 +199,11 @@ def train_model(
         save_dir.mkdir(parents=True, exist_ok=True)
 
     # Early stopping
+    # Si monitoreamos F1, queremos maximizar; si monitoreamos loss, minimizar
+    mode = "max" if monitor_metric == "f1" else "min"
     early_stopping = EarlyStopping(
         patience=early_stopping_patience,
-        mode="min",  # Minimizar val_loss
+        mode=mode,
     )
 
     # Historial
@@ -211,7 +216,12 @@ def train_model(
         "val_f1": [],
     }
 
-    best_val_loss = float("inf")
+    # Inicializar best metric según lo que monitoreamos
+    if monitor_metric == "f1":
+        best_val_metric = -float("inf")  # Queremos maximizar F1
+    else:
+        best_val_metric = float("inf")  # Queremos minimizar loss
+
     best_model_state = None
 
     if verbose:
@@ -220,6 +230,7 @@ def train_model(
         print("=" * 70)
         print(f"Épocas máximas: {n_epochs}")
         print(f"Early stopping patience: {early_stopping_patience}")
+        print(f"Métrica monitoreada: val_{monitor_metric}")
         print(f"Device: {device}")
         print("=" * 70 + "\n")
 
@@ -248,9 +259,18 @@ def train_model(
         if scheduler is not None:
             scheduler.step(val_metrics["loss"])
 
-        # Guardar mejor modelo
-        if val_metrics["loss"] < best_val_loss:
-            best_val_loss = val_metrics["loss"]
+        # Obtener métrica actual
+        current_metric = val_metrics[monitor_metric]
+
+        # Guardar mejor modelo según la métrica monitoreada
+        is_better = False
+        if monitor_metric == "f1":
+            is_better = current_metric > best_val_metric
+        else:
+            is_better = current_metric < best_val_metric
+
+        if is_better:
+            best_val_metric = current_metric
             best_model_state = model.state_dict().copy()
 
             if save_dir is not None:
@@ -260,8 +280,11 @@ def train_model(
                         "epoch": epoch,
                         "model_state_dict": best_model_state,
                         "optimizer_state_dict": optimizer.state_dict(),
-                        "val_loss": best_val_loss,
+                        "val_loss": val_metrics["loss"],
+                        "val_f1": val_metrics["f1"],
                         "val_metrics": val_metrics,
+                        "monitor_metric": monitor_metric,
+                        "best_val_metric": best_val_metric,
                     },
                     checkpoint_path,
                 )
@@ -279,12 +302,12 @@ def train_model(
                 f"Time: {epoch_time:.1f}s"
             )
 
-        # Early stopping
-        if early_stopping(val_metrics["loss"], epoch):
+        # Early stopping usando la métrica correcta
+        if early_stopping(current_metric, epoch):
             if verbose:
                 print(f"\n⚠️  Early stopping en época {epoch + 1}")
                 print(f"    Mejor época: {early_stopping.best_epoch + 1}")
-                print(f"    Mejor val_loss: {early_stopping.best_score:.4f}")
+                print(f"    Mejor val_{monitor_metric}: {early_stopping.best_score:.4f}")
             break
 
     total_time = time.time() - start_time
@@ -294,17 +317,26 @@ def train_model(
         print("ENTRENAMIENTO COMPLETADO")
         print("=" * 70)
         print(f"Tiempo total: {total_time / 60:.1f} minutos")
-        print(f"Mejor val_loss: {best_val_loss:.4f}")
+        print(f"Mejor val_{monitor_metric}: {best_val_metric:.4f}")
         print("=" * 70 + "\n")
 
     # Restaurar mejor modelo
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
 
+    # Obtener best_val_loss para compatibilidad
+    if monitor_metric == "loss":
+        best_val_loss = best_val_metric
+    else:
+        best_f1_idx = history["val_f1"].index(max(history["val_f1"]))
+        best_val_loss = history["val_loss"][best_f1_idx]
+
     return {
         "model": model,
         "history": history,
         "best_val_loss": best_val_loss,
+        "best_val_metric": best_val_metric,
+        "monitor_metric": monitor_metric,
         "total_time": total_time,
     }
 

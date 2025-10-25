@@ -12,6 +12,24 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Import from core module to avoid code duplication
+from modules.core.utils import create_10fold_splits_by_speaker
+
+__all__ = [
+    "create_domain_mapping",
+    "assign_domain_labels",
+    "calculate_class_weights",
+    "split_dataset_by_speaker",
+    "create_10fold_splits_by_speaker",
+    "create_dataloaders_from_existing",
+    "compute_class_weights_from_dataset",
+    "compute_class_weights_auto",
+    "print_model_architecture",
+    "visualize_model_graph",
+    "plot_training_history_da",
+    "plot_confusion_matrix",
+]
+
 
 # ============================================================
 # DOMAIN LABEL MANAGEMENT
@@ -214,81 +232,6 @@ def split_by_speaker(
     print(f"   Test:  {len(test_subjects)} hablantes, {len(test_indices)} muestras")
 
     return {"train": train_indices, "val": val_indices, "test": test_indices}
-
-
-def create_10fold_splits_by_speaker(
-    metadata_list: List[dict], n_folds: int = 10, seed: int = 42
-) -> List[Dict[str, List[int]]]:
-    """
-    Crea 10 folds estratificados independientes por hablante.
-
-    Asegura que:
-    - Todos los segmentos de un hablante están en el mismo fold
-    - Cada fold está estratificado por etiqueta PD (balanceado HC/PD)
-    - Sin fugas de hablante entre train/val
-
-    Args:
-        metadata_list: Lista de metadatos con 'subject_id' y 'label'
-        n_folds: Número de folds (default: 10)
-        seed: Semilla para reproducibilidad
-
-    Returns:
-        Lista de dicts con splits: [{'train': [...], 'val': [...]}, ...]
-    """
-    from sklearn.model_selection import StratifiedKFold
-
-    # Agrupar por subject_id
-    subject_to_indices = {}
-    subject_to_label = {}
-
-    for idx, meta in enumerate(metadata_list):
-        subject_id = meta.get("subject_id", meta.get("filename", f"unknown_{idx}"))
-        label = meta.get("label", 0)
-
-        if subject_id not in subject_to_indices:
-            subject_to_indices[subject_id] = []
-            subject_to_label[subject_id] = label
-
-        subject_to_indices[subject_id].append(idx)
-
-    # Preparar arrays para StratifiedKFold
-    subjects = list(subject_to_indices.keys())
-    labels = [subject_to_label[subj] for subj in subjects]
-
-    subjects = np.array(subjects)
-    labels = np.array(labels)
-
-    # Crear folds estratificados sobre hablantes
-    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
-
-    fold_splits = []
-
-    for fold_idx, (train_subject_idx, val_subject_idx) in enumerate(
-        skf.split(subjects, labels)
-    ):
-        train_subjects = subjects[train_subject_idx]
-        val_subjects = subjects[val_subject_idx]
-
-        # Obtener índices de muestras
-        train_indices = [
-            idx for subj in train_subjects for idx in subject_to_indices[subj]
-        ]
-        val_indices = [idx for subj in val_subjects for idx in subject_to_indices[subj]]
-
-        fold_splits.append({"train": train_indices, "val": val_indices})
-
-    print(f"\n📊 10-Fold CV speaker-independent creado:")
-    print(f"   Total hablantes: {len(subjects)}")
-    print(f"   Total muestras: {len(metadata_list)}")
-    print(f"   Folds: {n_folds}")
-
-    # Estadísticas de primer fold
-    fold_1 = fold_splits[0]
-    print(f"\n   Fold 1 (ejemplo):")
-    print(f"      Train: {len(fold_1['train'])} muestras")
-    print(f"      Val:   {len(fold_1['val'])} muestras")
-
-    return fold_splits
 
 
 # ============================================================

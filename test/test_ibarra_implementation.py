@@ -35,12 +35,10 @@ def test_imports():
     print("=" * 70)
 
     try:
-        from modules.cnn_model import CNN2D_DA
-        from modules.cnn_training import train_model_da, train_model_da_kfold
-        from modules.cnn_utils import (
-            create_10fold_splits_by_speaker,
-            compute_class_weights_auto,
-        )
+        from modules.models.cnn2d.model_da import CNN2D_DA
+        from modules.models.cnn2d.training import train_model_da, train_model_da_kfold
+        from modules.core.utils import create_10fold_splits_by_speaker
+        from modules.models.cnn2d.utils import compute_class_weights_auto
         from modules.preprocessing import (
             SAMPLE_RATE,
             WINDOW_MS,
@@ -100,7 +98,7 @@ def test_model_architecture():
     print("=" * 70)
 
     try:
-        from modules.cnn_model import CNN2D_DA
+        from modules.models.cnn2d.model_da import CNN2D_DA
 
         # Crear modelo
         model = CNN2D_DA(n_domains=10, p_drop_conv=0.3, p_drop_fc=0.5)
@@ -145,7 +143,7 @@ def test_kfold_splits():
     print("=" * 70)
 
     try:
-        from modules.cnn_utils import create_10fold_splits_by_speaker
+        from modules.core.utils import create_10fold_splits_by_speaker
 
         # Metadata de ejemplo
         metadata = []
@@ -192,7 +190,7 @@ def test_class_weights():
     print("=" * 70)
 
     try:
-        from modules.cnn_utils import compute_class_weights_auto
+        from modules.models.cnn2d.utils import compute_class_weights_auto
 
         # Dataset balanceado
         labels_balanced = torch.tensor([0, 0, 0, 1, 1, 1])
@@ -210,7 +208,9 @@ def test_class_weights():
             print(f"{YELLOW}{WARN}{RESET} Dataset balanceado: Pesos aplicados")
 
         if weights_unbalanced is not None:
-            print(f"{GREEN}{OK}{RESET} Dataset desbalanceado: Pesos aplicados (correcto)")
+            print(
+                f"{GREEN}{OK}{RESET} Dataset desbalanceado: Pesos aplicados (correcto)"
+            )
             print(f"   Pesos: {weights_unbalanced.tolist()}")
         else:
             print(f"{RED}{FAIL}{RESET} Dataset desbalanceado: Sin pesos (incorrecto)")
@@ -228,7 +228,7 @@ def test_sgd_config():
     print("=" * 70)
 
     try:
-        from modules.cnn_model import CNN2D_DA
+        from modules.models.cnn2d.model_da import CNN2D_DA
 
         model = CNN2D_DA(n_domains=10)
 

@@ -5,7 +5,7 @@ Sistema completo de detección de Parkinson mediante análisis de voz usando red
 ## 🎯 Objetivo del Proyecto
 
 Implementar un sistema de clasificación binaria (Healthy vs Parkinson) usando:
-- **CNN2D** con optimización automática de hiperparámetros (Talos)
+- **CNN2D** con optimización automática de hiperparámetros (Optuna)
 - **Cuantificación de incertidumbre** (Epistemic + Aleatoric)
 - **Explicabilidad** mediante GradCAM
 - **Data Augmentation** para mejorar generalización
@@ -81,7 +81,7 @@ El proyecto incluye un **sistema centralizado de gestión de dependencias** que:
 ### 0️⃣ **`svdd_data_preparation.ipynb`** - Preparación de Datos SVDD (OPCIONAL)
 ### 1️⃣ **`data_preprocessing.ipynb`** - Preprocesamiento de Datos
 ### 2️⃣ **`data_augmentation.ipynb`** - Augmentation de Datos  
-### 3️⃣ **`cnn_training.ipynb`** - Entrenamiento CNN2D con Talos (NUEVO)
+### 3️⃣ **`cnn_training.ipynb`** - Entrenamiento CNN2D con Optuna (NUEVO)
 ### 4️⃣ **`cnn_uncertainty_training.ipynb`** - Entrenamiento con Incertidumbre
 ### 5️⃣ **`gradcam_inference.ipynb`** - Visualización GradCAM
 
@@ -411,7 +411,8 @@ python test/validate_paper_replication.py research/cnn_training.ipynb
 # 2. Ejecutar pruebas unitarias
 pytest test/test_paper_compliance.py -v
 
-python -m pytest test/test_talos_*.py -v --tb=short
+# Pruebas de optimización de hiperparámetros (Optuna)
+python -m pytest test/test_optuna_basic.py test/test_cnn2d_optuna.py -v --tb=short
 
 # 3. Ver reporte detallado
 cat test/PAPER_VALIDATION_REPORT.md
