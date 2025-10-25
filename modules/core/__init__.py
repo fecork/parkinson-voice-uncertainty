@@ -35,11 +35,34 @@ from .model_evaluation import (
 # Import preprocessing module
 from . import preprocessing
 
-# Import dataset module
-from . import dataset
+# Import dataset module functions
+from .dataset import (
+    process_dataset,
+    process_dataset_with_checkpoint,
+    process_dataset_parallel,
+    process_dataset_parallel_with_checkpoint,
+    to_pytorch_tensors,
+    save_spectrograms_cache,
+    load_spectrograms_cache,
+    VowelSegmentsDataset,
+    SampleMeta,
+)
 
-# Import visualization module
-from . import visualization
+# Import visualization module functions
+from .visualization import (
+    visualize_audio_and_spectrograms,
+    plot_spectrogram_comparison,
+    plot_waveform,
+    plot_mel_spectrogram,
+    plot_label_distribution,
+    plot_sample_spectrograms_grid,
+    compare_original_vs_augmented,
+    compare_audio_waveforms,
+    plot_training_history,
+    plot_confusion_matrix,
+    create_audio_player,
+    save_figure,
+)
 
 __all__ = [
     "TalosOptimizer",
@@ -52,6 +75,27 @@ __all__ = [
     "compare_models",
     "save_model_results",
     "preprocessing",
-    "dataset",
-    "visualization",
+    # Dataset functions
+    "process_dataset",
+    "process_dataset_with_checkpoint",
+    "process_dataset_parallel",
+    "process_dataset_parallel_with_checkpoint",
+    "to_pytorch_tensors",
+    "save_spectrograms_cache",
+    "load_spectrograms_cache",
+    "VowelSegmentsDataset",
+    "SampleMeta",
+    # Visualization functions
+    "visualize_audio_and_spectrograms",
+    "plot_spectrogram_comparison",
+    "plot_waveform",
+    "plot_mel_spectrogram",
+    "plot_label_distribution",
+    "plot_sample_spectrograms_grid",
+    "compare_original_vs_augmented",
+    "compare_audio_waveforms",
+    "plot_training_history",
+    "plot_confusion_matrix",
+    "create_audio_player",
+    "save_figure",
 ]
