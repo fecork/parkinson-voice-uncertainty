@@ -95,10 +95,13 @@ def visualize_audio_and_spectrograms(
         axes[1, i].grid(True, alpha=0.3)
         plt.colorbar(im, ax=axes[1, i], fraction=0.046, pad=0.04)
 
-        # 3. Comparación: Audio vs Espectrograma
-        axes[2, i].plot(time_axis, segment, linewidth=1.5, color="steelblue", alpha=0.7)
+        # 3. Comparación: Audio con marcas de frames del espectrograma
+        # Mostrar audio con líneas que indican los frames del espectrograma
+        time_axis = np.linspace(0, len(segment) / sr, len(segment))
+        axes[2, i].plot(time_axis, segment, linewidth=1.5, color="steelblue", alpha=0.8)
         axes[2, i].set_title(
-            f"Comparación {i + 1}\nAudio: {len(segment) / sr:.2f}s → Espectrograma: {spectrogram.shape[1]} frames",
+            f"Audio con Frames {i + 1}\n"
+            f"Audio: {len(segment) / sr:.2f}s → Espectrograma: {spectrogram.shape[1]} frames",
             fontsize=12,
             fontweight="bold",
         )
@@ -109,11 +112,13 @@ def visualize_audio_and_spectrograms(
 
         # Añadir líneas verticales para frames del espectrograma
         frame_duration = 0.01  # 10ms por frame
-        for frame in range(0, spectrogram.shape[1], 5):
+        for frame in range(
+            0, spectrogram.shape[1], 2
+        ):  # Cada 2 frames para evitar saturación
             time_frame = frame * frame_duration
             if time_frame <= len(segment) / sr:
                 axes[2, i].axvline(
-                    x=time_frame, color="red", alpha=0.3, linestyle="--", linewidth=0.5
+                    x=time_frame, color="red", alpha=0.4, linestyle="--", linewidth=0.8
                 )
 
         # Crear objeto Audio
@@ -144,18 +149,19 @@ def visualize_audio_and_spectrograms(
     # Mostrar información del procesamiento (último sample)
     last_sample = samples[-1]
     last_meta = last_sample["metadata"]
-    print(f"\n📊 INFORMACIÓN DEL PROCESAMIENTO:")
+    print("\n📊 INFORMACIÓN DEL PROCESAMIENTO:")
     print(
-        f"  - Audio original: {len(last_sample['segment']) / sr:.2f}s (400ms por segmento)"
+        f"  - Audio original: {len(last_sample['segment']) / sr:.2f}s "
+        f"(400ms por segmento)"
     )
     print(
-        f"  - Espectrograma: {last_sample['spectrogram'].shape[0]}×{last_sample['spectrogram'].shape[1]} (65 bandas × 41 frames)"
+        f"  - Espectrograma: {last_sample['spectrogram'].shape[0]}×"
+        f"{last_sample['spectrogram'].shape[1]} (65 bandas × 41 frames)"
     )
     print(f"  - Frames temporales: {last_sample['spectrogram'].shape[1]} (cada 10ms)")
-    print(
-        f"  - Ventana FFT: {'40ms' if last_meta.vowel_type == 'a' else '25ms'} para vocal {last_meta.vowel_type}"
-    )
-    print(f"  - Normalización: z-score aplicada")
+    fft_window = "40ms" if last_meta.vowel_type == "a" else "25ms"
+    print(f"  - Ventana FFT: {fft_window} para vocal {last_meta.vowel_type}")
+    print("  - Normalización: z-score aplicada")
 
     return fig, audio_objects
 
@@ -303,7 +309,6 @@ def plot_label_distribution(
     Returns:
         Figura de matplotlib
     """
-    import torch
     from collections import Counter
 
     # Convertir a numpy si es tensor
@@ -382,8 +387,13 @@ def plot_sample_spectrograms_grid(
     import torch
 
     # Convertir a numpy si es necesario
-    if isinstance(spectrograms, torch.Tensor):
-        spectrograms = spectrograms.numpy()
+    try:
+        import torch
+
+        if isinstance(spectrograms, torch.Tensor):
+            spectrograms = spectrograms.numpy()
+    except ImportError:
+        pass
 
     # Remover dimensión de canal si existe
     if spectrograms.ndim == 4:

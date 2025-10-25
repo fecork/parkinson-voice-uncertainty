@@ -13,6 +13,9 @@ from pathlib import Path
 import pickle
 import numpy as np
 import torch
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import time
 
 from . import preprocessing
 
@@ -45,9 +48,13 @@ def _safe_len(x: Optional[Sequence]) -> int:
 
 
 def _print_progress(i: int, total: int, path_name: str, every: int) -> None:
-    """Print compact progress every N files."""
+    """Print detailed progress with files processed and remaining."""
     if i % max(1, every) == 0:
-        print(f"  {i + 1}/{total}: {path_name}")
+        processed = i + 1
+        remaining = total - processed
+        percentage = (processed / total) * 100
+        print(f"  📁 {processed}/{total} ({percentage:.1f}%) - {path_name}")
+        print(f"     ✅ Procesados: {processed} | ⏳ Faltan: {remaining}")
 
 
 def parse_filename(file_stem: str) -> Tuple[str, str, str]:
@@ -99,9 +106,12 @@ def process_dataset(
     max_files: Optional[int] = None,
     progress_every: int = 10,
     default_sr: int = 44100,
+    checkpoint_path: Optional[str] = None,
+    resume_from_checkpoint: bool = True,
+    clear_existing_checkpoint: bool = False,
 ) -> List[Dict]:
     """
-    Process the dataset using the paper's preprocessing function.
+    Process the dataset using the paper's preprocessing function with checkpoint support.
 
     Args:
         audio_files: Iterable of pathlib.Path-like objects.
@@ -109,6 +119,9 @@ def process_dataset(
         max_files: Optional cap on number of files to process.
         progress_every: Print progress every N files.
         default_sr: Sampling rate to attach to metadata (if unknown externally).
+        checkpoint_path: Path to save/load checkpoint file (optional).
+        resume_from_checkpoint: If True, resume from checkpoint if exists.
+        clear_existing_checkpoint: If True, clear existing checkpoint and start fresh.
 
     Returns:
         A list of dict samples with spectrograms, segments, and metadata.
@@ -120,12 +133,46 @@ def process_dataset(
         print("Error: 'audio_files' está vacío: no hay nada que procesar.")
         return []
 
-    files_to_process = list(audio_files[:max_files]) if max_files else list(audio_files)
-    print(f"Procesando {len(files_to_process)} archivos...")
+    if max_files:
+        files_to_process = list(audio_files[:max_files])
+    else:
+        files_to_process = list(audio_files)
+    total_files = len(files_to_process)
 
+    # Manejo de checkpoints
     dataset: List[Dict] = []
+    processed_files: List[str] = []
+    start_index = 0
+
+    if checkpoint_path and not clear_existing_checkpoint:
+        checkpoint_data = load_checkpoint(checkpoint_path)
+        if checkpoint_data and resume_from_checkpoint:
+            dataset = checkpoint_data["dataset"]
+            processed_files = checkpoint_data["processed_files"]
+            start_index = len(processed_files)
+            print(f"🔄 Continuando desde archivo {start_index + 1}/{total_files}")
+        elif checkpoint_data:
+            print("⚠️ Checkpoint encontrado pero resume_from_checkpoint=False")
+
+    if clear_existing_checkpoint and checkpoint_path:
+        clear_checkpoint(checkpoint_path)
+        print("🗑️ Checkpoint eliminado, comenzando desde cero")
+
+    if start_index == 0:
+        print(f"🔄 Procesando {total_files} archivos...")
+    else:
+        remaining = total_files - start_index
+        print(f"🔄 Continuando procesamiento: {remaining} archivos restantes")
+    print(f"📊 Configuración: progress_every={progress_every}")
+
+    successful_files = len(processed_files)
+    failed_files = 0
 
     for i, file_path in enumerate(files_to_process):
+        # Saltar archivos ya procesados
+        if i < start_index:
+            continue
+
         _print_progress(
             i,
             len(files_to_process),
@@ -140,12 +187,17 @@ def process_dataset(
         # Llamada al preprocesamiento (del paper)
         try:
             spectrograms, segments = preprocess_fn(file_path, vowel_type=vowel_type)
+            successful_files += 1
         except Exception as e:
-            print(f"Error al procesar {file_path}: {e}. Continuando...")
+            print(f"❌ Error al procesar {file_path}: {e}. Continuando...")
+            failed_files += 1
+            processed_files.append(str(file_path))
             continue
 
         if not spectrograms:
             # Nada que agregar de este archivo
+            failed_files += 1
+            processed_files.append(str(file_path))
             continue
 
         # Empaquetar muestras
@@ -165,7 +217,31 @@ def process_dataset(
                 }
             )
 
-    print(f"{len(dataset)} muestras generadas")
+        # Agregar archivo a la lista de procesados
+        processed_files.append(str(file_path))
+
+        # Guardar checkpoint cada cierto número de archivos
+        if checkpoint_path and (i + 1) % max(1, progress_every) == 0:
+            save_checkpoint(dataset, processed_files, checkpoint_path, total_files)
+
+    # Limpiar checkpoint al finalizar exitosamente
+    if checkpoint_path:
+        clear_checkpoint(checkpoint_path)
+        print("✅ Procesamiento completado, checkpoint eliminado")
+
+    # Resumen final detallado
+    print("\n" + "=" * 60)
+    print("📊 RESUMEN DEL PROCESAMIENTO")
+    print("=" * 60)
+    print(f"📁 Archivos totales: {total_files}")
+    print(f"✅ Archivos exitosos: {successful_files}")
+    print(f"❌ Archivos fallidos: {failed_files}")
+    print(f"📈 Tasa de éxito: {(successful_files / total_files) * 100:.1f}%")
+    print(f"🎯 Muestras generadas: {len(dataset)}")
+    if successful_files > 0:
+        print(f"📊 Promedio muestras/archivo: {len(dataset) / successful_files:.1f}")
+    print("=" * 60)
+
     return dataset
 
 
@@ -355,6 +431,399 @@ def build_full_pipeline(
         "metadata": metas,
         "summary": dist,
     }
+
+
+# ============================================================
+# MULTIPROCESSING UTILITIES
+# ============================================================
+
+
+def _process_single_file(args: Tuple) -> Tuple[Optional[Dict], str, bool]:
+    """
+    Procesa un solo archivo de audio. Función para multiprocessing.
+
+    Args:
+        args: Tupla con (file_path, vowel_type, preprocess_fn, default_sr)
+
+    Returns:
+        Tupla con (resultado, filename, success)
+    """
+    file_path, vowel_type, preprocess_fn, default_sr = args
+
+    try:
+        # Parsear metadatos del archivo
+        subject_id, parsed_vowel, condition = parse_filename(
+            getattr(file_path, "stem", str(file_path))
+        )
+
+        # Usar vowel_type del argumento si está disponible
+        if vowel_type:
+            final_vowel = vowel_type
+        else:
+            final_vowel = parsed_vowel
+
+        # Procesar archivo
+        spectrograms, segments = preprocess_fn(file_path, vowel_type=final_vowel)
+
+        if not spectrograms:
+            return None, str(file_path), False
+
+        # Crear muestras
+        samples = []
+        for j, (spec, seg) in enumerate(zip(spectrograms, segments)):
+            sample = {
+                "spectrogram": spec,
+                "segment": seg,
+                "metadata": SampleMeta(
+                    subject_id=subject_id,
+                    vowel_type=final_vowel,
+                    condition=condition,
+                    filename=getattr(file_path, "name", str(file_path)),
+                    segment_id=j,
+                    sr=default_sr,
+                ),
+            }
+            samples.append(sample)
+
+        return samples, str(file_path), True
+
+    except Exception as e:
+        print(f"❌ Error procesando {file_path}: {e}")
+        return None, str(file_path), False
+
+
+def process_dataset_parallel(
+    audio_files: Sequence,
+    preprocess_fn: Optional[Callable] = None,
+    max_files: Optional[int] = None,
+    progress_every: int = 10,
+    default_sr: int = 44100,
+    checkpoint_path: Optional[str] = None,
+    resume_from_checkpoint: bool = True,
+    clear_existing_checkpoint: bool = False,
+    n_workers: Optional[int] = None,
+    chunk_size: int = 1,
+) -> List[Dict]:
+    """
+    Procesa el dataset usando multiprocessing para acelerar el procesamiento.
+
+    Args:
+        audio_files: Lista de archivos de audio
+        preprocess_fn: Función de preprocesamiento
+        max_files: Máximo número de archivos
+        progress_every: Cada cuántos archivos mostrar progreso
+        default_sr: Sample rate por defecto
+        checkpoint_path: Ruta del checkpoint
+        resume_from_checkpoint: Si continuar desde checkpoint
+        clear_existing_checkpoint: Si limpiar checkpoint existente
+        n_workers: Número de procesos paralelos (None = auto)
+        chunk_size: Tamaño de chunk para cada worker
+
+    Returns:
+        Dataset procesado
+    """
+    if preprocess_fn is None:
+        preprocess_fn = preprocessing.preprocess_audio_paper
+
+    if not audio_files:
+        print("Error: 'audio_files' está vacío: no hay nada que procesar.")
+        return []
+
+    if max_files:
+        files_to_process = list(audio_files[:max_files])
+    else:
+        files_to_process = list(audio_files)
+    total_files = len(files_to_process)
+
+    # Configurar número de workers
+    if n_workers is None:
+        n_workers = min(mp.cpu_count(), len(files_to_process))
+
+    print(f"🚀 Procesamiento paralelo con {n_workers} workers")
+    print(f"📊 Archivos a procesar: {total_files}")
+    print(f"⚙️ Configuración: progress_every={progress_every}, chunk_size={chunk_size}")
+
+    # Manejo de checkpoints
+    dataset: List[Dict] = []
+    processed_files: List[str] = []
+    start_index = 0
+
+    if checkpoint_path and not clear_existing_checkpoint:
+        checkpoint_data = load_checkpoint(checkpoint_path)
+        if checkpoint_data and resume_from_checkpoint:
+            dataset = checkpoint_data["dataset"]
+            processed_files = checkpoint_data["processed_files"]
+            start_index = len(processed_files)
+            print(f"🔄 Continuando desde archivo {start_index + 1}/{total_files}")
+        elif checkpoint_data:
+            print("⚠️ Checkpoint encontrado pero resume_from_checkpoint=False")
+
+    if clear_existing_checkpoint and checkpoint_path:
+        clear_checkpoint(checkpoint_path)
+        print("🗑️ Checkpoint eliminado, comenzando desde cero")
+
+    if start_index == 0:
+        print(f"🔄 Procesando {total_files} archivos...")
+    else:
+        remaining = total_files - start_index
+        print(f"🔄 Continuando procesamiento: {remaining} archivos restantes")
+
+    # Preparar argumentos para multiprocessing
+    files_to_process_remaining = files_to_process[start_index:]
+
+    if not files_to_process_remaining:
+        print("✅ Todos los archivos ya fueron procesados")
+        return dataset
+
+    # Crear argumentos para cada archivo
+    process_args = []
+    for file_path in files_to_process_remaining:
+        subject_id, vowel_type, condition = parse_filename(
+            getattr(file_path, "stem", str(file_path))
+        )
+        process_args.append((file_path, vowel_type, preprocess_fn, default_sr))
+
+    # Procesar en paralelo
+    successful_files = len(processed_files)
+    failed_files = 0
+    start_time = time.time()
+
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        # Enviar trabajos
+        future_to_file = {
+            executor.submit(_process_single_file, args): args[0]
+            for args in process_args
+        }
+
+        # Procesar resultados conforme van completándose
+        for i, future in enumerate(as_completed(future_to_file), start=start_index):
+            file_path = future_to_file[future]
+
+            try:
+                result, filename, success = future.result()
+
+                if success and result:
+                    dataset.extend(result)
+                    successful_files += 1
+                else:
+                    failed_files += 1
+
+                processed_files.append(str(file_path))
+
+                # Mostrar progreso
+                if (i + 1) % max(1, progress_every) == 0:
+                    elapsed = time.time() - start_time
+                    rate = (i + 1) / elapsed if elapsed > 0 else 0
+                    remaining = total_files - (i + 1)
+                    eta = remaining / rate if rate > 0 else 0
+
+                    print(
+                        f"  📁 {i + 1}/{total_files} ({((i + 1) / total_files) * 100:.1f}%) - {filename}"
+                    )
+                    print(
+                        f"     ✅ Procesados: {successful_files} | ❌ Fallidos: {failed_files}"
+                    )
+                    print(
+                        f"     ⚡ Velocidad: {rate:.1f} archivos/seg | ⏱️ ETA: {eta / 60:.1f} min"
+                    )
+
+                # Guardar checkpoint
+                if checkpoint_path and (i + 1) % max(1, progress_every) == 0:
+                    save_checkpoint(
+                        dataset, processed_files, checkpoint_path, total_files
+                    )
+
+            except Exception as e:
+                print(f"❌ Error procesando {file_path}: {e}")
+                failed_files += 1
+                processed_files.append(str(file_path))
+
+    # Limpiar checkpoint al finalizar exitosamente
+    if checkpoint_path:
+        clear_checkpoint(checkpoint_path)
+        print("✅ Procesamiento completado, checkpoint eliminado")
+
+    # Resumen final detallado
+    total_time = time.time() - start_time
+    print("\n" + "=" * 60)
+    print("📊 RESUMEN DEL PROCESAMIENTO PARALELO")
+    print("=" * 60)
+    print(f"📁 Archivos totales: {total_files}")
+    print(f"✅ Archivos exitosos: {successful_files}")
+    print(f"❌ Archivos fallidos: {failed_files}")
+    print(f"📈 Tasa de éxito: {(successful_files / total_files) * 100:.1f}%")
+    print(f"🎯 Muestras generadas: {len(dataset)}")
+    print(f"⏱️ Tiempo total: {total_time / 60:.1f} minutos")
+    print(f"⚡ Velocidad promedio: {total_files / total_time:.1f} archivos/seg")
+    if successful_files > 0:
+        print(f"📊 Promedio muestras/archivo: {len(dataset) / successful_files:.1f}")
+    print("=" * 60)
+
+    return dataset
+
+
+# ============================================================
+# CHECKPOINT UTILITIES
+# ============================================================
+
+
+def save_checkpoint(
+    dataset: List[Dict],
+    processed_files: List[str],
+    checkpoint_path: str,
+    total_files: int,
+) -> None:
+    """
+    Guarda checkpoint del procesamiento para poder continuar después.
+
+    Args:
+        dataset: Dataset parcial procesado hasta ahora
+        processed_files: Lista de archivos ya procesados
+        checkpoint_path: Ruta donde guardar el checkpoint
+        total_files: Total de archivos a procesar
+    """
+    checkpoint_file = Path(checkpoint_path)
+    checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
+
+    checkpoint_data = {
+        "dataset": dataset,
+        "processed_files": processed_files,
+        "total_files": total_files,
+        "timestamp": np.datetime64("now"),
+    }
+
+    with open(checkpoint_file, "wb") as f:
+        pickle.dump(checkpoint_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    size_mb = checkpoint_file.stat().st_size / (1024 * 1024)
+    print(f"\n💾 Checkpoint guardado: {checkpoint_path}")
+    print(f"   Tamaño: {size_mb:.1f} MB")
+    print(f"   Archivos procesados: {len(processed_files)}/{total_files}")
+    print(f"   Muestras en dataset: {len(dataset)}")
+
+
+def load_checkpoint(checkpoint_path: str) -> Optional[Dict]:
+    """
+    Carga checkpoint del procesamiento.
+
+    Args:
+        checkpoint_path: Ruta del archivo checkpoint
+
+    Returns:
+        Diccionario con datos del checkpoint o None si no existe
+    """
+    checkpoint_file = Path(checkpoint_path)
+
+    if not checkpoint_file.exists():
+        return None
+
+    try:
+        with open(checkpoint_file, "rb") as f:
+            checkpoint_data = pickle.load(f)
+
+        size_mb = checkpoint_file.stat().st_size / (1024 * 1024)
+        print(f"✅ Checkpoint cargado: {checkpoint_path}")
+        print(f"   Tamaño: {size_mb:.1f} MB")
+        processed_count = len(checkpoint_data["processed_files"])
+        total_count = checkpoint_data["total_files"]
+        print(f"   Archivos procesados: {processed_count}/{total_count}")
+        print(f"   Muestras en dataset: {len(checkpoint_data['dataset'])}")
+
+        return checkpoint_data
+    except Exception as e:
+        print(f"❌ Error cargando checkpoint: {e}")
+        return None
+
+
+def clear_checkpoint(checkpoint_path: str) -> None:
+    """
+    Elimina el archivo checkpoint.
+
+    Args:
+        checkpoint_path: Ruta del archivo checkpoint
+    """
+    checkpoint_file = Path(checkpoint_path)
+    if checkpoint_file.exists():
+        checkpoint_file.unlink()
+        print(f"🗑️ Checkpoint eliminado: {checkpoint_path}")
+
+
+def process_dataset_with_checkpoint(
+    audio_files: Sequence,
+    checkpoint_path: str,
+    preprocess_fn: Optional[Callable] = None,
+    max_files: Optional[int] = None,
+    progress_every: int = 10,
+    default_sr: int = 44100,
+    force_restart: bool = False,
+) -> List[Dict]:
+    """
+    Función de conveniencia para procesar dataset con checkpoint automático.
+
+    Args:
+        audio_files: Lista de archivos de audio
+        checkpoint_path: Ruta del checkpoint
+        preprocess_fn: Función de preprocesamiento
+        max_files: Máximo número de archivos
+        progress_every: Cada cuántos archivos mostrar progreso
+        default_sr: Sample rate por defecto
+        force_restart: Si True, ignora checkpoint y comienza desde cero
+
+    Returns:
+        Dataset procesado
+    """
+    return process_dataset(
+        audio_files=audio_files,
+        preprocess_fn=preprocess_fn,
+        max_files=max_files,
+        progress_every=progress_every,
+        default_sr=default_sr,
+        checkpoint_path=checkpoint_path,
+        resume_from_checkpoint=not force_restart,
+        clear_existing_checkpoint=force_restart,
+    )
+
+
+def process_dataset_parallel_with_checkpoint(
+    audio_files: Sequence,
+    checkpoint_path: str,
+    preprocess_fn: Optional[Callable] = None,
+    max_files: Optional[int] = None,
+    progress_every: int = 10,
+    default_sr: int = 44100,
+    force_restart: bool = False,
+    n_workers: Optional[int] = None,
+    chunk_size: int = 1,
+) -> List[Dict]:
+    """
+    Función de conveniencia para procesar dataset en paralelo con checkpoint.
+
+    Args:
+        audio_files: Lista de archivos de audio
+        checkpoint_path: Ruta del checkpoint
+        preprocess_fn: Función de preprocesamiento
+        max_files: Máximo número de archivos
+        progress_every: Cada cuántos archivos mostrar progreso
+        default_sr: Sample rate por defecto
+        force_restart: Si True, ignora checkpoint y comienza desde cero
+        n_workers: Número de procesos paralelos (None = auto)
+        chunk_size: Tamaño de chunk para cada worker
+
+    Returns:
+        Dataset procesado
+    """
+    return process_dataset_parallel(
+        audio_files=audio_files,
+        preprocess_fn=preprocess_fn,
+        max_files=max_files,
+        progress_every=progress_every,
+        default_sr=default_sr,
+        checkpoint_path=checkpoint_path,
+        resume_from_checkpoint=not force_restart,
+        clear_existing_checkpoint=force_restart,
+        n_workers=n_workers,
+        chunk_size=chunk_size,
+    )
 
 
 # ============================================================

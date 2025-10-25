@@ -12,7 +12,9 @@ Este módulo proporciona funcionalidades reutilizables para:
 Módulos:
 - talos_optimization: Funciones base para optimización
 - model_evaluation: Evaluación y comparación de modelos
-- hyperparameter_analysis: Análisis de importancia de hiperparámetros
+- preprocessing: Preprocesamiento de audio
+- dataset: Manejo de datasets
+- visualization: Visualización de datos
 """
 
 from .talos_optimization import (
@@ -24,7 +26,20 @@ from .talos_optimization import (
     print_optimization_summary,
 )
 
-from .model_evaluation import ModelEvaluator, compare_models, save_model_results
+from .model_evaluation import (
+    ModelEvaluator,
+    compare_models,
+    save_model_results,
+)
+
+# Import preprocessing module
+from . import preprocessing
+
+# Import dataset module
+from . import dataset
+
+# Import visualization module
+from . import visualization
 
 __all__ = [
     "TalosOptimizer",
@@ -36,4 +51,7 @@ __all__ = [
     "ModelEvaluator",
     "compare_models",
     "save_model_results",
+    "preprocessing",
+    "dataset",
+    "visualization",
 ]

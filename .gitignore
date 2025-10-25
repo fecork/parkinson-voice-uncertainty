@@ -45,3 +45,6 @@ Thumbs.db
 notebooks/temp/
 *.nsp
 
+# Google Drive temporary uploads
+.tmp.driveupload/
+
