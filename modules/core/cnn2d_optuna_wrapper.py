@@ -251,6 +251,8 @@ def optimize_cnn2d(
     n_epochs_per_trial: int = 20,
     device: str = "cpu",
     save_dir: str = None,
+    checkpoint_dir: str = None,
+    resume: bool = True,
 ) -> Dict[str, Any]:
     """
     Optimizar hiperparámetros de CNN2D con Optuna (función todo-en-uno).
@@ -265,6 +267,8 @@ def optimize_cnn2d(
         n_epochs_per_trial: Épocas por trial
         device: Dispositivo
         save_dir: Directorio donde guardar resultados (opcional)
+        checkpoint_dir: Directorio para checkpoints (opcional)
+        resume: Si reanudar desde checkpoint (opcional)
 
     Returns:
         dict: Resultados completos de la optimización
@@ -275,30 +279,108 @@ def optimize_cnn2d(
         ...     input_shape=(1, 65, 41),
         ...     n_trials=30,
         ...     device='cuda',
-        ...     save_dir='results/optuna'
+        ...     save_dir='results/optuna',
+        ...     checkpoint_dir='checkpoints',
+        ...     resume=True
         ... )
         >>> print(f"Mejor F1: {results['best_value']}")
         >>> print(f"Mejores params: {results['best_params']}")
     """
-    # Crear optimizador
-    optimizer = create_cnn2d_optimizer(
-        input_shape=input_shape,
-        n_trials=n_trials,
-        n_epochs_per_trial=n_epochs_per_trial,
-        device=device,
+    # Importar sistema de checkpointing
+    from modules.core.optuna_checkpoint import OptunaCheckpoint
+
+    # Configurar checkpointing
+    if checkpoint_dir is None:
+        checkpoint_dir = save_dir or "checkpoints"
+
+    checkpoint = OptunaCheckpoint(
+        checkpoint_dir=checkpoint_dir, experiment_name="cnn2d_optuna"
     )
 
-    # Ejecutar optimización
-    print(f"Iniciando optimización con {n_trials} trials...")
-    results_df = optimizer.optimize(X_train, y_train, X_val, y_val)
+    # Verificar si se puede reanudar
+    if resume:
+        resume_info = checkpoint.get_resume_info()
+        if resume_info["can_resume"]:
+            print(f"🔄 Reanudando optimización desde checkpoint:")
+            print(f"   - Trials completados: {resume_info['completed_trials']}")
+            print(f"   - Progreso: {resume_info['progress_percentage']:.1f}%")
+            print(f"   - Mejor F1: {resume_info['best_value']:.4f}")
+            print(f"   - Mejor trial: {resume_info['best_trial']}")
 
-    # Obtener resultados
+            # Crear estudio desde checkpoint
+            study = checkpoint.create_study_from_checkpoint()
+
+            # Calcular trials restantes
+            remaining_trials = n_trials - resume_info["completed_trials"]
+            if remaining_trials <= 0:
+                print("✅ Optimización ya completada")
+                results_df = checkpoint.create_dataframe_from_checkpoint()
+                best_params = resume_info["best_params"]
+                best_value = resume_info["best_value"]
+            else:
+                print(f"🚀 Continuando con {remaining_trials} trials restantes...")
+
+                # Continuar optimización
+                study.optimize(
+                    lambda trial: _objective_with_checkpoint(
+                        trial,
+                        X_train,
+                        y_train,
+                        X_val,
+                        y_val,
+                        input_shape,
+                        n_epochs_per_trial,
+                        device,
+                        checkpoint,
+                    ),
+                    n_trials=remaining_trials,
+                    show_progress_bar=True,
+                )
+
+                # Obtener resultados
+                results_df = checkpoint.create_dataframe_from_checkpoint()
+                best_params = study.best_params
+                best_value = study.best_value
+        else:
+            print("🆕 Iniciando optimización desde cero...")
+            study = _run_optimization_with_checkpoint(
+                X_train,
+                y_train,
+                X_val,
+                y_val,
+                input_shape,
+                n_trials,
+                n_epochs_per_trial,
+                device,
+                checkpoint,
+            )
+            results_df = checkpoint.create_dataframe_from_checkpoint()
+            best_params = study.best_params
+            best_value = study.best_value
+    else:
+        print("🆕 Iniciando optimización desde cero...")
+        study = _run_optimization_with_checkpoint(
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            input_shape,
+            n_trials,
+            n_epochs_per_trial,
+            device,
+            checkpoint,
+        )
+        results_df = checkpoint.create_dataframe_from_checkpoint()
+        best_params = study.best_params
+        best_value = study.best_value
+
+    # Preparar resultados
     results = {
-        "best_params": optimizer.get_best_params(),
-        "best_value": optimizer.get_best_value(),
-        "best_trial": optimizer.get_best_trial().number,
+        "best_params": best_params,
+        "best_value": best_value,
+        "best_trial": study.best_trial.number,
         "results_df": results_df,
-        "analysis": optimizer.analyze_results(),
+        "analysis": {"best_trial": study.best_trial},
     }
 
     # Guardar si se especificó directorio
@@ -306,12 +388,180 @@ def optimize_cnn2d(
         from pathlib import Path
 
         save_path = Path(save_dir)
-        optimizer.save_results(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
+        results_df.to_csv(save_path / "optuna_trials_results.csv", index=False)
+        with open(save_path / "best_params.json", "w") as f:
+            json.dump(best_params, f, indent=2)
 
-    print(f"\nOptimización completada!")
-    print(f"Mejor F1: {results['best_value']:.4f}")
+    print(f"\n🎉 Optimización completada!")
+    print(f"Mejor F1: {best_value:.4f}")
     print(f"Mejores hiperparámetros:")
-    for param, value in results["best_params"].items():
+    for param, value in best_params.items():
         print(f"  {param}: {value}")
 
     return results
+
+
+def _objective_with_checkpoint(
+    trial: optuna.trial.Trial,
+    X_train: torch.Tensor,
+    y_train: torch.Tensor,
+    X_val: torch.Tensor,
+    y_val: torch.Tensor,
+    input_shape: Tuple[int, int, int],
+    n_epochs_per_trial: int,
+    device: str,
+    checkpoint: "OptunaCheckpoint",
+) -> float:
+    """
+    Función objetivo con checkpointing automático.
+    """
+    # Crear modelo
+    model = CNN2D(
+        input_shape=input_shape[1:],
+        filters_1=trial.suggest_categorical("filters_1", [16, 32, 64]),
+        filters_2=trial.suggest_categorical("filters_2", [32, 64, 128]),
+        kernel_size_1=trial.suggest_categorical("kernel_size_1", [3, 5]),
+        kernel_size_2=trial.suggest_categorical("kernel_size_2", [3, 5]),
+        p_drop_conv=trial.suggest_float("p_drop_conv", 0.2, 0.5),
+        p_drop_fc=trial.suggest_float("p_drop_fc", 0.3, 0.6),
+        dense_units=trial.suggest_categorical("dense_units", [32, 64, 128]),
+    ).to(device)
+
+    # Crear DataLoaders
+    from torch.utils.data import DataLoader, TensorDataset
+
+    train_dataset = TensorDataset(X_train, y_train)
+    val_dataset = TensorDataset(X_val, y_val)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=trial.suggest_categorical("batch_size", [16, 32, 64]),
+        shuffle=True,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=trial.suggest_categorical("batch_size", [16, 32, 64]),
+        shuffle=False,
+    )
+
+    # Optimizador
+    if trial.suggest_categorical("optimizer", ["adam", "sgd"]) == "adam":
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
+            weight_decay=trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True),
+        )
+    else:
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
+            weight_decay=trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True),
+            momentum=0.9,
+        )
+
+    criterion = torch.nn.CrossEntropyLoss()
+
+    # Entrenamiento
+    best_f1 = 0.0
+    best_metrics = {}
+
+    for epoch in range(n_epochs_per_trial):
+        # Training
+        model.train()
+        for batch_x, batch_y in train_loader:
+            batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+            optimizer.zero_grad()
+            outputs = model(batch_x)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            optimizer.step()
+
+        # Validation
+        model.eval()
+        val_preds = []
+        val_labels = []
+        with torch.no_grad():
+            for batch_x, batch_y in val_loader:
+                batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+                outputs = model(batch_x)
+                _, predicted = torch.max(outputs.data, 1)
+                val_preds.extend(predicted.cpu().numpy())
+                val_labels.extend(batch_y.cpu().numpy())
+
+        # Calcular métricas
+        from sklearn.metrics import (
+            f1_score,
+            accuracy_score,
+            precision_score,
+            recall_score,
+        )
+
+        f1 = f1_score(val_labels, val_preds, average="macro")
+        acc = accuracy_score(val_labels, val_preds)
+        prec = precision_score(val_labels, val_preds, average="macro")
+        rec = recall_score(val_labels, val_preds, average="macro")
+
+        if f1 > best_f1:
+            best_f1 = f1
+            best_metrics = {
+                "f1_macro": f1,
+                "accuracy": acc,
+                "precision_macro": prec,
+                "recall_macro": rec,
+            }
+
+        # Reportar a Optuna
+        trial.report(f1, epoch)
+        if trial.should_prune():
+            raise TrialPruned()
+
+    # Guardar trial en checkpoint
+    checkpoint.save_trial(trial, best_metrics)
+
+    return best_f1
+
+
+def _run_optimization_with_checkpoint(
+    X_train: torch.Tensor,
+    y_train: torch.Tensor,
+    X_val: torch.Tensor,
+    y_val: torch.Tensor,
+    input_shape: Tuple[int, int, int],
+    n_trials: int,
+    n_epochs_per_trial: int,
+    device: str,
+    checkpoint: "OptunaCheckpoint",
+) -> optuna.Study:
+    """
+    Ejecutar optimización con checkpointing automático.
+    """
+    # Crear estudio
+    study = optuna.create_study(
+        study_name="cnn2d_optuna",
+        direction="maximize",
+        pruner=optuna.pruners.MedianPruner(
+            n_startup_trials=5,
+            n_warmup_steps=5,
+            interval_steps=1,
+        ),
+        sampler=optuna.samplers.TPESampler(seed=42),
+    )
+
+    # Ejecutar optimización
+    study.optimize(
+        lambda trial: _objective_with_checkpoint(
+            trial,
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            input_shape,
+            n_epochs_per_trial,
+            device,
+            checkpoint,
+        ),
+        n_trials=n_trials,
+        show_progress_bar=True,
+    )
+
+    return study
