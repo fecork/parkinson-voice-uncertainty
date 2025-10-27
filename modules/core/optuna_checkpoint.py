@@ -43,23 +43,24 @@ class OptunaCheckpoint:
         self.progress_file = self.checkpoint_dir / f"{experiment_name}_progress.json"
         self.study_file = self.checkpoint_dir / f"{experiment_name}_study.json"
 
-    def save_trial(self, trial: optuna.trial.Trial, metrics: Dict[str, float]):
+    def save_trial(
+        self,
+        trial: optuna.trial.Trial,
+        metrics: Dict[str, float],
+        state: str = "COMPLETE",
+    ):
         """
         Guardar resultado de un trial individual.
 
         Args:
             trial: Trial de Optuna
             metrics: Métricas del trial
+            state: Estado del trial ("COMPLETE" o "PRUNED")
         """
-        # Manejar tanto objetos TrialState como strings
-        if hasattr(trial.state, "name"):
-            state_name = trial.state.name
-        else:
-            state_name = str(trial.state)
         trial_data = {
             "number": trial.number,
-            "state": state_name,
-            "value": trial.value,
+            "state": state,
+            "value": trial.value if trial.value is not None else None,
             "params": trial.params,
             "metrics": metrics,
             "datetime_start": trial.datetime_start.isoformat()
@@ -81,6 +82,47 @@ class OptunaCheckpoint:
             json.dump(trials_data, f, indent=2)
 
         print(f"💾 Trial {trial.number} guardado: F1={metrics.get('f1_macro', 0):.4f}")
+
+    def save_pruned_trial(self, trial: optuna.trial.Trial, epoch: int, f1_value: float):
+        """
+        Guardar un trial pruned.
+
+        Args:
+            trial: Trial de Optuna
+            epoch: Época donde fue pruned
+            f1_value: Último valor de F1 antes del pruning
+        """
+        trial_data = {
+            "number": trial.number,
+            "state": "PRUNED",
+            "value": f1_value,
+            "params": trial.params,
+            "metrics": {
+                "f1_macro": f1_value,
+                "accuracy": 0.0,
+                "precision_macro": 0.0,
+                "recall_macro": 0.0,
+            },
+            "datetime_start": trial.datetime_start.isoformat()
+            if trial.datetime_start
+            else None,
+            "datetime_complete": None,
+            "pruned_at_epoch": epoch,
+        }
+
+        # Cargar datos existentes
+        trials_data = self.load_trials()
+
+        # Agregar trial pruned
+        trials_data[str(trial.number)] = trial_data
+
+        # Guardar en archivo
+        with open(self.trials_file, "w") as f:
+            json.dump(trials_data, f, indent=2)
+
+        print(
+            f"🛑 Trial {trial.number} pruned guardado: F1={f1_value:.4f} (epoch {epoch})"
+        )
 
     def save_best_params(self, best_params: Dict[str, Any], best_value: float):
         """

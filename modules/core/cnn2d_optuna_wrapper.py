@@ -552,15 +552,22 @@ def _objective_with_checkpoint(
             print(
                 f"🛑 Trial {trial.number} pruned at epoch {epoch + 1} (no improvement for {epochs_without_improvement} epochs)"
             )
+            # Guardar trial pruned
+            checkpoint.save_pruned_trial(trial, epoch + 1, f1)
             raise TrialPruned()
 
         # Pruning estándar de Optuna (como respaldo)
         if trial.should_prune():
             print(f"🛑 Trial {trial.number} pruned by Optuna at epoch {epoch + 1}")
+            # Guardar trial pruned
+            checkpoint.save_pruned_trial(trial, epoch + 1, f1)
             raise TrialPruned()
 
-    # Guardar trial en checkpoint
-    checkpoint.save_trial(trial, best_metrics)
+    # Guardar trial en checkpoint solo si se completó
+    try:
+        checkpoint.save_trial(trial, best_metrics)
+    except Exception as e:
+        print(f"⚠️  No se pudo guardar trial {trial.number}: {e}")
 
     return best_f1
 
