@@ -51,9 +51,14 @@ class OptunaCheckpoint:
             trial: Trial de Optuna
             metrics: Métricas del trial
         """
+        # Manejar tanto objetos TrialState como strings
+        if hasattr(trial.state, "name"):
+            state_name = trial.state.name
+        else:
+            state_name = str(trial.state)
         trial_data = {
             "number": trial.number,
-            "state": trial.state.name,
+            "state": state_name,
             "value": trial.value,
             "params": trial.params,
             "metrics": metrics,

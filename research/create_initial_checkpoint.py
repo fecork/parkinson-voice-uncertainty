@@ -2,14 +2,20 @@
 # CREAR CHECKPOINT INICIAL DESDE LOGS
 # ============================================================
 
+import json
+import pandas as pd
+import sys
+from pathlib import Path
+
+# Agregar el directorio raíz del proyecto al path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from modules.core.optuna_checkpoint import OptunaCheckpoint
+
 print("=" * 70)
 print("CREANDO CHECKPOINT INICIAL DESDE LOGS")
 print("=" * 70)
-
-import json
-import pandas as pd
-from pathlib import Path
-from modules.core.optuna_checkpoint import OptunaCheckpoint
 
 # Datos de los logs que proporcionaste
 trials_data = {
@@ -608,6 +614,8 @@ for trial_num, trial_data in trials_data.items():
             self.params = data["params"]
             self.value = data["value"]
             self.state = data["state"]
+            self.datetime_start = None
+            self.datetime_complete = None
 
     mock_trial = MockTrial(trial_data)
     checkpoint.save_trial(mock_trial, trial_data["metrics"])
@@ -622,11 +630,11 @@ completed_trials = len([t for t in trials_data.values() if t["state"] == "COMPLE
 total_trials = 30
 checkpoint.save_progress(completed_trials, total_trials, best_value, 15)
 
-print(f"✅ Checkpoint creado exitosamente:")
+print("✅ Checkpoint creado exitosamente:")
 print(f"   - Trials guardados: {len(trials_data)}")
 print(f"   - Trials completados: {completed_trials}")
 print(f"   - Mejor F1: {best_value:.4f}")
-print(f"   - Mejor trial: 15")
+print("   - Mejor trial: 15")
 print(f"   - Directorio: {checkpoint_dir}")
 
 print("\n" + "=" * 70)
