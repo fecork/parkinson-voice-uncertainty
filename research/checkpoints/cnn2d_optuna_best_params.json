@@ -2,10 +2,10 @@
   "best_params": {
     "filters_1": 32,
     "filters_2": 64,
-    "kernel_size_1": 5,
-    "kernel_size_2": 5,
-    "p_drop_conv": 0.3129300736522818,
-    "p_drop_fc": 0.35785994258711895,
+    "kernel_size_1": 6,
+    "kernel_size_2": 7,
+    "p_drop_conv": 0.2,
+    "p_drop_fc": 0.5,
     "dense_units": 32,
     "learning_rate": 3.2728820575830906e-05,
     "weight_decay": 3.960297762441869e-05,
@@ -13,5 +13,5 @@
     "batch_size": 16
   },
   "best_value": 0.7313054106063851,
-  "timestamp": "2025-10-27T17:19:28.031026"
+  "timestamp": "2025-10-27T22:45:00.000000"
 }

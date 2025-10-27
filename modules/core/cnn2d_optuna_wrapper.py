@@ -50,13 +50,27 @@ class CNN2DOptunaWrapper(OptunaModelWrapper):
         """
         params = {
             # Arquitectura (nombres compatibles con CNN2D)
-            "filters_1": trial.suggest_categorical("filters_1", [16, 32, 64]),
-            "filters_2": trial.suggest_categorical("filters_2", [32, 64, 128]),
-            "kernel_size_1": trial.suggest_categorical("kernel_size_1", [3, 5]),
-            "kernel_size_2": trial.suggest_categorical("kernel_size_2", [3, 5]),
-            "p_drop_conv": trial.suggest_float("p_drop_conv", 0.2, 0.5),
-            "p_drop_fc": trial.suggest_float("p_drop_fc", 0.3, 0.6),
-            "dense_units": trial.suggest_categorical("dense_units", [32, 64, 128]),
+            "filters_1": trial.suggest_categorical(
+                "filters_1", [32, 64, 128]
+            ),  # Depth conv layer I
+            "filters_2": trial.suggest_categorical(
+                "filters_2", [32, 64, 128]
+            ),  # Depth conv layer II
+            "kernel_size_1": trial.suggest_categorical(
+                "kernel_size_1", [4, 6, 8]
+            ),  # Kernel size I
+            "kernel_size_2": trial.suggest_categorical(
+                "kernel_size_2", [5, 7, 9]
+            ),  # Kernel size II
+            "p_drop_conv": trial.suggest_categorical(
+                "p_drop_conv", [0.2, 0.5]
+            ),  # Dropout rate
+            "p_drop_fc": trial.suggest_categorical(
+                "p_drop_fc", [0.2, 0.5]
+            ),  # Dropout rate FC
+            "dense_units": trial.suggest_categorical(
+                "dense_units", [16, 32, 64]
+            ),  # FC units
             # Optimización
             "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
             "weight_decay": trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True),
@@ -419,13 +433,23 @@ def _objective_with_checkpoint(
     # Crear modelo
     model = CNN2D(
         input_shape=input_shape[1:],
-        filters_1=trial.suggest_categorical("filters_1", [16, 32, 64]),
-        filters_2=trial.suggest_categorical("filters_2", [32, 64, 128]),
-        kernel_size_1=trial.suggest_categorical("kernel_size_1", [3, 5]),
-        kernel_size_2=trial.suggest_categorical("kernel_size_2", [3, 5]),
-        p_drop_conv=trial.suggest_float("p_drop_conv", 0.2, 0.5),
-        p_drop_fc=trial.suggest_float("p_drop_fc", 0.3, 0.6),
-        dense_units=trial.suggest_categorical("dense_units", [32, 64, 128]),
+        filters_1=trial.suggest_categorical(
+            "filters_1", [32, 64, 128]
+        ),  # Depth conv layer I
+        filters_2=trial.suggest_categorical(
+            "filters_2", [32, 64, 128]
+        ),  # Depth conv layer II
+        kernel_size_1=trial.suggest_categorical(
+            "kernel_size_1", [4, 6, 8]
+        ),  # Kernel size I
+        kernel_size_2=trial.suggest_categorical(
+            "kernel_size_2", [5, 7, 9]
+        ),  # Kernel size II
+        p_drop_conv=trial.suggest_categorical(
+            "p_drop_conv", [0.2, 0.5]
+        ),  # Dropout rate
+        p_drop_fc=trial.suggest_categorical("p_drop_fc", [0.2, 0.5]),  # Dropout rate FC
+        dense_units=trial.suggest_categorical("dense_units", [16, 32, 64]),  # FC units
     ).to(device)
 
     # Crear DataLoaders
@@ -461,9 +485,12 @@ def _objective_with_checkpoint(
 
     criterion = torch.nn.CrossEntropyLoss()
 
-    # Entrenamiento
+    # Entrenamiento con pruning agresivo
     best_f1 = 0.0
     best_metrics = {}
+    epochs_without_improvement = 0
+    pruning_patience = 3  # Cortar si no mejora en 3 épocas
+    min_epochs_before_pruning = 2  # Mínimo 2 épocas antes de aplicar pruning
 
     for epoch in range(n_epochs_per_trial):
         # Training
@@ -501,6 +528,7 @@ def _objective_with_checkpoint(
         prec = precision_score(val_labels, val_preds, average="macro")
         rec = recall_score(val_labels, val_preds, average="macro")
 
+        # Actualizar mejor F1 y contador de épocas sin mejora
         if f1 > best_f1:
             best_f1 = f1
             best_metrics = {
@@ -509,10 +537,26 @@ def _objective_with_checkpoint(
                 "precision_macro": prec,
                 "recall_macro": rec,
             }
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
 
         # Reportar a Optuna
         trial.report(f1, epoch)
+
+        # Pruning agresivo personalizado
+        if (
+            epoch >= min_epochs_before_pruning
+            and epochs_without_improvement >= pruning_patience
+        ):
+            print(
+                f"🛑 Trial {trial.number} pruned at epoch {epoch + 1} (no improvement for {epochs_without_improvement} epochs)"
+            )
+            raise TrialPruned()
+
+        # Pruning estándar de Optuna (como respaldo)
         if trial.should_prune():
+            print(f"🛑 Trial {trial.number} pruned by Optuna at epoch {epoch + 1}")
             raise TrialPruned()
 
     # Guardar trial en checkpoint
@@ -535,13 +579,13 @@ def _run_optimization_with_checkpoint(
     """
     Ejecutar optimización con checkpointing automático.
     """
-    # Crear estudio
+    # Crear estudio con pruning agresivo
     study = optuna.create_study(
         study_name="cnn2d_optuna",
         direction="maximize",
         pruner=optuna.pruners.MedianPruner(
-            n_startup_trials=5,
-            n_warmup_steps=5,
+            n_startup_trials=2,  # Reducido de 5 a 2 (más agresivo)
+            n_warmup_steps=2,  # Reducido de 5 a 2 (más agresivo)
             interval_steps=1,
         ),
         sampler=optuna.samplers.TPESampler(seed=42),
