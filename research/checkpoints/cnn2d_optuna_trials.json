@@ -622,31 +622,5 @@
     },
     "datetime_start": null,
     "datetime_complete": null
-  },
-  "23": {
-    "number": 23,
-    "state": "COMPLETE",
-    "value": 0.7230127197574583,
-    "params": {
-      "filters_1": 32,
-      "filters_2": 64,
-      "kernel_size_1": 5,
-      "kernel_size_2": 5,
-      "p_drop_conv": 0.2865692436199309,
-      "p_drop_fc": 0.3560918228578222,
-      "dense_units": 32,
-      "learning_rate": 2.3964483219461982e-05,
-      "weight_decay": 0.00017303877476957207,
-      "optimizer": "adam",
-      "batch_size": 16
-    },
-    "metrics": {
-      "f1_macro": 0.7230127197574583,
-      "accuracy": 0.0,
-      "precision_macro": 0.0,
-      "recall_macro": 0.0
-    },
-    "datetime_start": null,
-    "datetime_complete": null
   }
 }

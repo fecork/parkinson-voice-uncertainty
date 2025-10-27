@@ -8,7 +8,14 @@ import sys
 from pathlib import Path
 
 # Agregar el directorio raíz del proyecto al path
-project_root = Path(__file__).parent.parent
+# Manejar tanto ejecución directa como exec() en notebook
+try:
+    # Cuando se ejecuta directamente
+    project_root = Path(__file__).parent.parent
+except NameError:
+    # Cuando se ejecuta con exec() en notebook
+    project_root = Path.cwd().parent
+
 sys.path.insert(0, str(project_root))
 
 from modules.core.optuna_checkpoint import OptunaCheckpoint
