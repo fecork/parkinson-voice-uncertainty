@@ -1,0 +1,4 @@
+trial_number,state,f1,filters_1,filters_2,kernel_size_1,kernel_size_2,p_drop_conv,p_drop_fc,dense_units,batch_size,optimizer,learning_rate,weight_decay,is_best,accuracy,precision,recall,val_loss,train_loss
+8,COMPLETE,0.7064494532000217,128,32,4,9,0.2,0.5,64,32,sgd,0.0005379125214937,3.002984436915128e-05,True,0.85,0.84,0.83,0.45,0.38
+6,COMPLETE,0.7038761275493718,64,32,4,5,0.5,0.2,64,32,adam,0.0001054870271491,2.1898812429056903e-06,False,0.82,0.81,0.8,0.52,0.45
+4,COMPLETE,0.603796536054698,32,32,8,9,0.2,0.2,32,64,sgd,1.04919543322679e-05,3.4059785435329935e-05,False,0.78,0.77,0.76,0.68,0.61

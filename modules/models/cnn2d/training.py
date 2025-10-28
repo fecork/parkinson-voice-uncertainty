@@ -96,7 +96,7 @@ def train_one_epoch(
         "accuracy": accuracy_score(all_labels, all_preds),
         "precision": precision_score(all_labels, all_preds, zero_division=0),
         "recall": recall_score(all_labels, all_preds, zero_division=0),
-        "f1": f1_score(all_labels, all_preds, zero_division=0),
+        "f1": f1_score(all_labels, all_preds, average="macro", zero_division=0),
     }
 
     return metrics
@@ -148,7 +148,7 @@ def evaluate(
         "accuracy": accuracy_score(all_labels, all_preds),
         "precision": precision_score(all_labels, all_preds, zero_division=0),
         "recall": recall_score(all_labels, all_preds, zero_division=0),
-        "f1": f1_score(all_labels, all_preds, zero_division=0),
+        "f1": f1_score(all_labels, all_preds, average="macro", zero_division=0),
     }
 
     return metrics
@@ -627,7 +627,7 @@ def train_one_epoch_da(
         "loss_total": total_loss / n_samples,
         "acc_pd": accuracy_score(all_labels_pd, all_preds_pd),
         "acc_domain": accuracy_score(all_labels_domain, all_preds_domain),
-        "f1_pd": f1_score(all_labels_pd, all_preds_pd, zero_division=0),
+        "f1_pd": f1_score(all_labels_pd, all_preds_pd, average="macro", zero_division=0),
     }
 
     return metrics
@@ -709,7 +709,7 @@ def evaluate_da(
         "loss_total": total_loss / n_samples,
         "acc_pd": accuracy_score(all_labels_pd, all_preds_pd),
         "acc_domain": accuracy_score(all_labels_domain, all_preds_domain),
-        "f1_pd": f1_score(all_labels_pd, all_preds_pd, zero_division=0),
+        "f1_pd": f1_score(all_labels_pd, all_preds_pd, average="macro", zero_division=0),
         "precision_pd": precision_score(all_labels_pd, all_preds_pd, zero_division=0),
         "recall_pd": recall_score(all_labels_pd, all_preds_pd, zero_division=0),
     }
