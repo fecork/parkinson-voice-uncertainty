@@ -1,0 +1,22 @@
+{
+  "best_params": {
+    "filters_1": 128,
+    "filters_2": 32,
+    "kernel_size_1": 4,
+    "kernel_size_2": 9,
+    "p_drop_conv": 0.2,
+    "p_drop_fc": 0.5,
+    "dense_units": 64,
+    "batch_size": 32,
+    "optimizer": "sgd",
+    "learning_rate": 0.0005379125214937586,
+    "weight_decay": 3.0029844369151282e-05
+  },
+  "best_value": 0.7064494532000217,
+  "best_trial": 8,
+  "experiment_name": "cnn2d_optuna",
+  "total_trials": 30,
+  "completed_trials": 30,
+  "created_at": "2025-10-27T18:56:01.783951",
+  "description": "Checkpoint extra\u00eddo del log de optimizaci\u00f3n - Solo SGD seg\u00fan paper de Ibarra"
+}

@@ -1,0 +1,81 @@
+{
+  "1": {
+    "number": 1,
+    "state": "COMPLETE",
+    "value": 0.75,
+    "params": {
+      "filters_1": 32,
+      "filters_2": 64,
+      "kernel_size_1": 5,
+      "kernel_size_2": 7,
+      "p_drop_conv": 0.2,
+      "p_drop_fc": 0.5,
+      "dense_units": 32,
+      "batch_size": 32,
+      "optimizer": "adam",
+      "learning_rate": 0.001,
+      "weight_decay": 0.0001
+    },
+    "metrics": {
+      "f1_macro": 0.75,
+      "accuracy": 0.8,
+      "precision_macro": 0.78,
+      "recall_macro": 0.72
+    },
+    "datetime_start": null,
+    "datetime_complete": null
+  },
+  "2": {
+    "number": 2,
+    "state": "COMPLETE",
+    "value": 0.75,
+    "params": {
+      "filters_1": 32,
+      "filters_2": 64,
+      "kernel_size_1": 5,
+      "kernel_size_2": 7,
+      "p_drop_conv": 0.2,
+      "p_drop_fc": 0.5,
+      "dense_units": 32,
+      "batch_size": 32,
+      "optimizer": "adam",
+      "learning_rate": 0.001,
+      "weight_decay": 0.0001
+    },
+    "metrics": {
+      "f1_macro": 0.75,
+      "accuracy": 0.8,
+      "precision_macro": 0.78,
+      "recall_macro": 0.72
+    },
+    "datetime_start": null,
+    "datetime_complete": null
+  },
+  "3": {
+    "number": 3,
+    "state": "PRUNED",
+    "value": 0.65,
+    "params": {
+      "filters_1": 32,
+      "filters_2": 64,
+      "kernel_size_1": 5,
+      "kernel_size_2": 7,
+      "p_drop_conv": 0.2,
+      "p_drop_fc": 0.5,
+      "dense_units": 32,
+      "batch_size": 32,
+      "optimizer": "adam",
+      "learning_rate": 0.001,
+      "weight_decay": 0.0001
+    },
+    "metrics": {
+      "f1_macro": 0.65,
+      "accuracy": 0.0,
+      "precision_macro": 0.0,
+      "recall_macro": 0.0
+    },
+    "datetime_start": null,
+    "datetime_complete": null,
+    "pruned_at_epoch": 5
+  }
+}

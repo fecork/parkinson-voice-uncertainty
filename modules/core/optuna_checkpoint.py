@@ -57,10 +57,17 @@ class OptunaCheckpoint:
             metrics: Métricas del trial
             state: Estado del trial ("COMPLETE" o "PRUNED")
         """
+        # Obtener el valor del trial de manera segura
+        trial_value = None
+        if hasattr(trial, "value") and trial.value is not None:
+            trial_value = trial.value
+        elif "f1_macro" in metrics:
+            trial_value = metrics["f1_macro"]
+
         trial_data = {
             "number": trial.number,
             "state": state,
-            "value": trial.value if trial.value is not None else None,
+            "value": trial_value,
             "params": trial.params,
             "metrics": metrics,
             "datetime_start": trial.datetime_start.isoformat()

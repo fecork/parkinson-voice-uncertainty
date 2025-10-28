@@ -15,6 +15,7 @@ from typing import Dict, Tuple, Any
 import optuna
 from optuna.trial import Trial
 from optuna.exceptions import TrialPruned
+import json
 
 from modules.core.optuna_optimization import OptunaModelWrapper, OptunaOptimizer
 from modules.models.cnn2d.model import CNN2D
@@ -74,7 +75,7 @@ class CNN2DOptunaWrapper(OptunaModelWrapper):
             # Optimización
             "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
             "weight_decay": trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True),
-            "optimizer": trial.suggest_categorical("optimizer", ["adam", "sgd"]),
+            "optimizer": "sgd",  # Solo SGD según paper de Ibarra
             # Batch size ya se sugiere en OptunaOptimizer._objective
         }
 
@@ -468,8 +469,8 @@ def _objective_with_checkpoint(
         shuffle=False,
     )
 
-    # Optimizador
-    if trial.suggest_categorical("optimizer", ["adam", "sgd"]) == "adam":
+    # Optimizador (solo SGD según paper de Ibarra)
+    if False:  # Siempre usar SGD
         optimizer = torch.optim.Adam(
             model.parameters(),
             lr=trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
@@ -563,9 +564,11 @@ def _objective_with_checkpoint(
             checkpoint.save_pruned_trial(trial, epoch + 1, f1)
             raise TrialPruned()
 
-    # Guardar trial en checkpoint solo si se completó
+    # Guardar trial completado en checkpoint
+    # (Los trials pruned ya se guardaron dentro del bucle)
     try:
-        checkpoint.save_trial(trial, best_metrics)
+        checkpoint.save_trial(trial, best_metrics, state="COMPLETE")
+        print(f"💾 Trial {trial.number} completado guardado: F1={best_f1:.4f}")
     except Exception as e:
         print(f"⚠️  No se pudo guardar trial {trial.number}: {e}")
 
