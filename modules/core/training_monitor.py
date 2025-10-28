@@ -16,6 +16,10 @@ import numpy as np
 import torch
 from pathlib import Path
 from typing import Dict, Any, Optional
+import warnings
+
+# Suprimir warnings de wandb
+warnings.filterwarnings("ignore", category=UserWarning, module="wandb")
 
 
 class TrainingMonitor:
@@ -29,6 +33,8 @@ class TrainingMonitor:
         plot_every: int = 5,
         use_wandb: bool = True,
         wandb_key: Optional[str] = None,
+        tags: Optional[list] = None,
+        notes: Optional[str] = None,
     ):
         """
         Inicializar monitor de entrenamiento.
@@ -40,14 +46,19 @@ class TrainingMonitor:
             plot_every: Cada cuántas épocas plotear localmente
             use_wandb: Si usar Weights & Biases
             wandb_key: API key de wandb (opcional)
+            tags: Tags para el experimento
+            notes: Notas para el experimento
         """
         self.project_name = project_name
         self.experiment_name = experiment_name
         self.config = config or {}
         self.plot_every = plot_every
         self.use_wandb = use_wandb
+        self.tags = tags or []
+        self.notes = notes or ""
         self.metrics = defaultdict(list)
         self.start_time = time.time()
+        self.wandb_run = None
 
         # Configurar wandb si está habilitado
         if self.use_wandb:
@@ -61,19 +72,23 @@ class TrainingMonitor:
             else:
                 wandb.login()
 
-            wandb.init(
+            self.wandb_run = wandb.init(
                 project=self.project_name,
                 name=self.experiment_name,
                 config=self.config,
+                tags=self.tags,
+                notes=self.notes,
                 reinit=True,
             )
             print(
                 f"✅ Weights & Biases configurado: {self.project_name}/{self.experiment_name}"
             )
+            print(f"   📊 URL: {self.wandb_run.url}")
         except Exception as e:
             print(f"⚠️  Error configurando wandb: {e}")
             print("   Continuando sin wandb...")
             self.use_wandb = False
+            self.wandb_run = None
 
     def log(self, epoch: int, **kwargs):
         """Registrar métricas para una época."""
@@ -82,11 +97,25 @@ class TrainingMonitor:
             self.metrics[key].append(value)
 
         # Logging a wandb
-        if self.use_wandb:
+        if self.use_wandb and self.wandb_run:
             try:
                 wandb.log({"epoch": epoch, **kwargs})
             except Exception as e:
                 print(f"⚠️  Error logging a wandb: {e}")
+
+    def log_model(self, model: torch.nn.Module, input_shape: tuple = None):
+        """Registrar el modelo en wandb."""
+        if self.use_wandb and self.wandb_run:
+            try:
+                if input_shape:
+                    # Crear un ejemplo de entrada
+                    example_input = torch.randn(1, *input_shape)
+                    wandb.watch(model, log="parameters", log_freq=10)
+                else:
+                    wandb.watch(model, log="parameters", log_freq=10)
+                print("✅ Modelo registrado en wandb")
+            except Exception as e:
+                print(f"⚠️  Error registrando modelo en wandb: {e}")
 
     def plot_local(self, save_path: Optional[Path] = None):
         """Mostrar gráficos locales de métricas."""
@@ -183,7 +212,7 @@ class TrainingMonitor:
 
     def finish(self):
         """Finalizar experimento."""
-        if self.use_wandb:
+        if self.use_wandb and self.wandb_run:
             try:
                 wandb.finish()
                 print("✅ Experimento finalizado en wandb")
@@ -196,6 +225,8 @@ def create_training_monitor(
     experiment_name: str = "cnn2d_training",
     use_wandb: bool = True,
     wandb_key: Optional[str] = None,
+    tags: Optional[list] = None,
+    notes: Optional[str] = None,
 ) -> TrainingMonitor:
     """
     Crear monitor de entrenamiento con configuración.
@@ -205,6 +236,8 @@ def create_training_monitor(
         experiment_name: Nombre del experimento
         use_wandb: Si usar Weights & Biases
         wandb_key: API key de wandb
+        tags: Tags para el experimento
+        notes: Notas para el experimento
 
     Returns:
         TrainingMonitor configurado
@@ -215,4 +248,39 @@ def create_training_monitor(
         config=config,
         use_wandb=use_wandb,
         wandb_key=wandb_key,
+        tags=tags,
+        notes=notes,
     )
+
+
+def test_wandb_connection(api_key: str = None) -> bool:
+    """
+    Probar conexión con Weights & Biases.
+
+    Args:
+        api_key: API key de wandb
+
+    Returns:
+        True si la conexión es exitosa
+    """
+    try:
+        if api_key:
+            wandb.login(key=api_key)
+        else:
+            wandb.login()
+
+        # Crear un run de prueba
+        run = wandb.init(project="test-connection", name="connection-test", reinit=True)
+
+        # Loggear algo simple
+        wandb.log({"test_metric": 1.0})
+
+        # Finalizar
+        wandb.finish()
+
+        print("✅ Conexión con Weights & Biases exitosa")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error conectando con Weights & Biases: {e}")
+        return False

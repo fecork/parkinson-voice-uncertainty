@@ -85,6 +85,20 @@ WANDB_CONFIG = {
     "project_name": "parkinson-voice-uncertainty",
     "enabled": True,
     "api_key": "b452ba0c4bbe61d8c58e966aa86a9037ae19594e",
+    "entity": None,  # Usar cuenta personal por defecto
+    "tags": ["cnn2d", "parkinson", "voice", "uncertainty"],
+    "notes": "CNN2D para detección de Parkinson con incertidumbre",
+}
+
+# Configuración de monitoreo de entrenamiento
+TRAINING_MONITOR_CONFIG = {
+    "use_wandb": True,
+    "plot_every": 5,  # Cada 5 épocas
+    "save_plots": True,
+    "plot_metrics": ["loss", "f1", "accuracy", "precision", "recall"],
+    "log_gradients": False,  # Deshabilitado para ahorrar espacio
+    "log_parameters": True,
+    "log_frequency": 1,  # Cada época
 }
 
 
