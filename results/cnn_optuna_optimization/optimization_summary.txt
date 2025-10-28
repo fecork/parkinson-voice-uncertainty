@@ -1,9 +1,9 @@
 RESUMEN DE OPTIMIZACIÓN OPTUNA
 ==================================================
 
-Total configuraciones evaluadas: 3
-Mejor F1-score: 0.7064
-F1-score promedio: 0.6714 ± 0.0585
+Total configuraciones evaluadas: 27
+Mejor F1-score: 0.7143
+F1-score promedio: 0.5547 ± 0.1237
 
 MEJORES HIPERPARÁMETROS:
 ------------------------------
@@ -21,6 +21,8 @@ weight_decay: 3.0029844369151282e-05
 
 TOP 5 CONFIGURACIONES:
 ------------------------------
-1. F1: 0.7064 | Acc: 0.8500 | Batch: 32 | LR: 0.0005379125214937
-2. F1: 0.7039 | Acc: 0.8200 | Batch: 32 | LR: 0.0001054870271491
-3. F1: 0.6038 | Acc: 0.7800 | Batch: 64 | LR: 1.04919543322679e-05
+1. F1: 0.7143 | Acc: 0.8500 | Batch: 16 | LR: 0.000038
+2. F1: 0.7081 | Acc: 0.8500 | Batch: 32 | LR: 0.000144
+3. F1: 0.7044 | Acc: 0.8500 | Batch: 32 | LR: 0.000053
+4. F1: 0.6891 | Acc: 0.8500 | Batch: 64 | LR: 0.003833
+5. F1: 0.6822 | Acc: 0.8500 | Batch: 32 | LR: 0.000028

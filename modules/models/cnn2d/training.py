@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import time
 import json
+import contextlib
 
 import numpy as np
 import torch
@@ -21,6 +22,22 @@ from sklearn.metrics import (
     confusion_matrix,
     classification_report,
 )
+
+
+@contextlib.contextmanager
+def disable_wandb_hooks():
+    """
+    Context manager para desactivar temporalmente los hooks de wandb.
+    Útil cuando se evalúa un modelo fuera del contexto de wandb.
+    """
+    import wandb
+
+    original_wandb_run = wandb.run
+    wandb.run = None
+    try:
+        yield
+    finally:
+        wandb.run = original_wandb_run
 
 
 # ============================================================
@@ -307,7 +324,9 @@ def train_model(
             if verbose:
                 print(f"\n⚠️  Early stopping en época {epoch + 1}")
                 print(f"    Mejor época: {early_stopping.best_epoch + 1}")
-                print(f"    Mejor val_{monitor_metric}: {early_stopping.best_score:.4f}")
+                print(
+                    f"    Mejor val_{monitor_metric}: {early_stopping.best_score:.4f}"
+                )
             break
 
     total_time = time.time() - start_time
@@ -374,18 +393,20 @@ def detailed_evaluation(
     all_labels = []
     all_probs = []
 
-    for batch in loader:
-        specs = batch["spectrogram"].to(device)
-        labels = batch["label"].to(device)
+    # Desactivar wandb hooks temporalmente para evitar errores
+    with disable_wandb_hooks():
+        for batch in loader:
+            specs = batch["spectrogram"].to(device)
+            labels = batch["label"].to(device)
 
-        # Forward pass
-        logits = model(specs)
-        probs = torch.softmax(logits, dim=1)
-        preds = logits.argmax(dim=1)
+            # Forward pass
+            logits = model(specs)
+            probs = torch.softmax(logits, dim=1)
+            preds = logits.argmax(dim=1)
 
-        all_preds.extend(preds.cpu().numpy())
-        all_labels.extend(labels.cpu().numpy())
-        all_probs.extend(probs.cpu().numpy())
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
 
     all_preds = np.array(all_preds)
     all_labels = np.array(all_labels)
@@ -627,7 +648,9 @@ def train_one_epoch_da(
         "loss_total": total_loss / n_samples,
         "acc_pd": accuracy_score(all_labels_pd, all_preds_pd),
         "acc_domain": accuracy_score(all_labels_domain, all_preds_domain),
-        "f1_pd": f1_score(all_labels_pd, all_preds_pd, average="macro", zero_division=0),
+        "f1_pd": f1_score(
+            all_labels_pd, all_preds_pd, average="macro", zero_division=0
+        ),
     }
 
     return metrics
@@ -666,39 +689,42 @@ def evaluate_da(
     all_preds_domain = []
     all_labels_domain = []
 
-    for batch in loader:
-        # Desempaquetar batch
-        if len(batch) == 3:
-            specs, labels_pd, labels_domain = batch
-            specs = specs.to(device)
-            labels_pd = labels_pd.to(device)
-            labels_domain = labels_domain.to(device)
-        else:
-            specs = batch["spectrogram"].to(device)
-            labels_pd = batch["label"].to(device)
-            labels_domain = batch.get("domain", torch.zeros_like(labels_pd)).to(device)
+    with disable_wandb_hooks():
+        for batch in loader:
+            # Desempaquetar batch
+            if len(batch) == 3:
+                specs, labels_pd, labels_domain = batch
+                specs = specs.to(device)
+                labels_pd = labels_pd.to(device)
+                labels_domain = labels_domain.to(device)
+            else:
+                specs = batch["spectrogram"].to(device)
+                labels_pd = batch["label"].to(device)
+                labels_domain = batch.get("domain", torch.zeros_like(labels_pd)).to(
+                    device
+                )
 
-        # Forward pass
-        logits_pd, logits_domain = model(specs)
+            # Forward pass
+            logits_pd, logits_domain = model(specs)
 
-        # Calcular pérdidas
-        loss_pd = criterion_pd(logits_pd, labels_pd)
-        loss_domain = criterion_domain(logits_domain, labels_domain)
-        loss = loss_pd + alpha * loss_domain
+            # Calcular pérdidas
+            loss_pd = criterion_pd(logits_pd, labels_pd)
+            loss_domain = criterion_domain(logits_domain, labels_domain)
+            loss = loss_pd + alpha * loss_domain
 
-        # Métricas
-        batch_size = specs.size(0)
-        total_loss_pd += loss_pd.item() * batch_size
-        total_loss_domain += loss_domain.item() * batch_size
-        total_loss += loss.item() * batch_size
+            # Métricas
+            batch_size = specs.size(0)
+            total_loss_pd += loss_pd.item() * batch_size
+            total_loss_domain += loss_domain.item() * batch_size
+            total_loss += loss.item() * batch_size
 
-        preds_pd = logits_pd.argmax(dim=1)
-        preds_domain = logits_domain.argmax(dim=1)
+            preds_pd = logits_pd.argmax(dim=1)
+            preds_domain = logits_domain.argmax(dim=1)
 
-        all_preds_pd.extend(preds_pd.cpu().numpy())
-        all_labels_pd.extend(labels_pd.cpu().numpy())
-        all_preds_domain.extend(preds_domain.cpu().numpy())
-        all_labels_domain.extend(labels_domain.cpu().numpy())
+            all_preds_pd.extend(preds_pd.cpu().numpy())
+            all_labels_pd.extend(labels_pd.cpu().numpy())
+            all_preds_domain.extend(preds_domain.cpu().numpy())
+            all_labels_domain.extend(labels_domain.cpu().numpy())
 
     # Calcular métricas promedio
     n_samples = len(all_labels_pd)
@@ -709,7 +735,9 @@ def evaluate_da(
         "loss_total": total_loss / n_samples,
         "acc_pd": accuracy_score(all_labels_pd, all_preds_pd),
         "acc_domain": accuracy_score(all_labels_domain, all_preds_domain),
-        "f1_pd": f1_score(all_labels_pd, all_preds_pd, average="macro", zero_division=0),
+        "f1_pd": f1_score(
+            all_labels_pd, all_preds_pd, average="macro", zero_division=0
+        ),
         "precision_pd": precision_score(all_labels_pd, all_preds_pd, zero_division=0),
         "recall_pd": recall_score(all_labels_pd, all_preds_pd, zero_division=0),
     }
@@ -934,8 +962,9 @@ def evaluate_by_patient_da(
     X_test = X_test.to(device)
 
     # Forward pass para obtener probabilidades
-    logits_pd, _ = model(X_test)
-    probs = torch.softmax(logits_pd, dim=1).cpu().numpy()
+    with disable_wandb_hooks():
+        logits_pd, _ = model(X_test)
+        probs = torch.softmax(logits_pd, dim=1).cpu().numpy()
 
     # Agrupar por paciente
     patient_probs = {}
