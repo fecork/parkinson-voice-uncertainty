@@ -1,0 +1,28 @@
+{
+  "os": "Windows-10-10.0.26200-SP0",
+  "python": "CPython 3.10.3",
+  "startedAt": "2025-10-29T20:37:25.856084Z",
+  "program": "C:\\Proyectos\\PHD- Parkinson - Incertidumbre - Prototipo\\parkinson-voice-uncertainty\\test\\demo_generic_wandb_training.py",
+  "codePath": "test\\demo_generic_wandb_training.py",
+  "codePathLocal": "test\\demo_generic_wandb_training.py",
+  "git": {
+    "remote": "https://github.com/fecork/parkinson-voice-uncertainty.git",
+    "commit": "4ca74ea1b89bdd06a85ce5419f2641cfbb4a93f7"
+  },
+  "email": "fecork88@gmail.com",
+  "root": "C:\\Proyectos\\PHD- Parkinson - Incertidumbre - Prototipo\\parkinson-voice-uncertainty",
+  "host": "LAPTOP-JTCP4GUT",
+  "executable": "C:\\Users\\fecor\\AppData\\Local\\Programs\\Python\\Python310\\python.exe",
+  "cpu_count": 4,
+  "cpu_count_logical": 8,
+  "disk": {
+    "/": {
+      "total": "998656958464",
+      "used": "699795746816"
+    }
+  },
+  "memory": {
+    "total": "16856498176"
+  },
+  "writerId": "5860bq23m3pf9o7k6ajdke1s3tgr89np"
+}

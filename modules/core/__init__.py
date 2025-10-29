@@ -65,6 +65,13 @@ from .utils import (
     create_10fold_splits_by_speaker,
 )
 
+# Import criterion factory functions
+from .criterion_factory import (
+    create_criterions_paper_style,
+    create_criterions_simple,
+    compute_domain_weights_from_indices,
+)
+
 __all__ = [
     "OptunaOptimizer",
     "OptunaModelWrapper",
@@ -97,4 +104,8 @@ __all__ = [
     "save_figure",
     # Utility functions
     "create_10fold_splits_by_speaker",
+    # Criterion factory functions
+    "create_criterions_paper_style",
+    "create_criterions_simple",
+    "compute_domain_weights_from_indices",
 ]

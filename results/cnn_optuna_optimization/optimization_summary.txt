@@ -1,11 +1,11 @@
-RESUMEN DE OPTIMIZACI√ìN OPTUNA
+RESUMEN DE OPTIMIZACI”N OPTUNA
 ==================================================
 
 Total configuraciones evaluadas: 27
 Mejor F1-score: 0.7143
-F1-score promedio: 0.5547 ¬± 0.1237
+F1-score promedio: 0.5547 ± 0.1237
 
-MEJORES HIPERPAR√ÅMETROS:
+MEJORES HIPERPAR¡METROS:
 ------------------------------
 filters_1: 128
 filters_2: 32

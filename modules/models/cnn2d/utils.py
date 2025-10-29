@@ -1,7 +1,8 @@
 """
 CNN Utilities Module
 ====================
-Funciones auxiliares para Domain Adaptation, visualización y utilidades generales.
+Funciones auxiliares para Domain Adaptation, visualización y utilidades
+generales.
 """
 
 from typing import Dict, List, Optional, Tuple
@@ -17,17 +18,18 @@ from modules.core.utils import create_10fold_splits_by_speaker
 
 __all__ = [
     "create_domain_mapping",
-    "assign_domain_labels",
-    "calculate_class_weights",
-    "split_dataset_by_speaker",
+    "create_domain_labels_from_metadata",
+    "print_domain_statistics",
+    "split_by_speaker",
     "create_10fold_splits_by_speaker",
     "create_dataloaders_from_existing",
     "compute_class_weights_from_dataset",
-    "compute_class_weights_auto",
     "print_model_architecture",
     "visualize_model_graph",
     "plot_training_history_da",
     "plot_confusion_matrix",
+    "plot_lambda_schedule",
+    "plot_model_comparison",
 ]
 
 
@@ -68,11 +70,11 @@ def create_domain_labels_from_metadata(
     """
     Convierte metadata a labels de dominio usando mapeo.
 
-        Args:
+    Args:
         metadata_list: Lista de metadatos
         domain_mapping: Mapeo opcional (si None, se crea automáticamente)
 
-        Returns:
+    Returns:
         Tensor de domain labels (N,)
     """
     if domain_mapping is None:
@@ -125,55 +127,8 @@ def print_domain_statistics(
 # ============================================================
 
 
-def calculate_class_weights(labels: torch.Tensor) -> torch.Tensor:
-    """
-    Calcula pesos de clase para balanceo en loss.
-
-    Args:
-        labels: Labels de clase (N,)
-
-    Returns:
-        Tensor de pesos (n_classes,)
-    """
-    class_counts = torch.bincount(labels)
-    total_samples = len(labels)
-
-    # Peso inversamente proporcional a frecuencia
-    weights = total_samples / (len(class_counts) * class_counts.float())
-
-    return weights
-
-
-def compute_class_weights_auto(
-    labels: torch.Tensor, threshold: float = 0.4
-) -> Optional[torch.Tensor]:
-    """
-    Detecta desbalance automáticamente y calcula pesos si es necesario.
-
-    Args:
-        labels: Labels de clase (N,)
-        threshold: Umbral para detectar desbalance (default: 0.4)
-                   Si clase minoritaria < threshold * total, aplicar pesos
-
-    Returns:
-        Tensor de pesos si hay desbalance, None si está balanceado
-    """
-    class_counts = torch.bincount(labels)
-    total_samples = len(labels)
-
-    # Calcular proporción de clase minoritaria
-    min_proportion = class_counts.min().item() / total_samples
-
-    if min_proportion < threshold:
-        # Hay desbalance, calcular pesos
-        weights = calculate_class_weights(labels)
-        print(
-            f"   ⚠️  Desbalance detectado (min class: {min_proportion:.1%}). Aplicando pesos."
-        )
-        return weights
-    else:
-        print(f"   ✓ Dataset balanceado (min class: {min_proportion:.1%}). Sin pesos.")
-        return None
+# Class weights functions moved to modules.models.common.training_utils
+# to avoid code duplication. Use compute_class_weights_auto from there.
 
 
 # ============================================================
@@ -302,6 +257,8 @@ def compute_class_weights_from_dataset(dataset, indices: List[int]) -> torch.Ten
     Returns:
         Tensor de pesos de clase
     """
+    from modules.models.common.training_utils import compute_class_weights_auto
+
     labels = []
     for idx in indices:
         sample = dataset[idx]
@@ -312,7 +269,14 @@ def compute_class_weights_from_dataset(dataset, indices: List[int]) -> torch.Ten
         labels.append(label.item() if isinstance(label, torch.Tensor) else label)
 
     labels_tensor = torch.tensor(labels, dtype=torch.long)
-    return calculate_class_weights(labels_tensor)
+    weights = compute_class_weights_auto(labels_tensor, threshold=0.4)
+
+    # Si está balanceado, retornar pesos uniformes
+    if weights is None:
+        n_classes = len(torch.unique(labels_tensor))
+        return torch.ones(n_classes, dtype=torch.float)
+
+    return weights
 
 
 # ============================================================
@@ -760,8 +724,10 @@ if __name__ == "__main__":
 
     # Test 2: Class weights
     print("\n2. Test class weights:")
+    from modules.models.common.training_utils import compute_class_weights_auto
+
     labels = torch.tensor([0, 0, 0, 1, 1, 1, 1, 1])  # Desbalanceado
-    weights = calculate_class_weights(labels)
+    weights = compute_class_weights_auto(labels, threshold=0.4)
     print(f"   Labels: {labels}")
     print(f"   Weights: {weights}")
 

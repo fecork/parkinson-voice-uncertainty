@@ -11,6 +11,9 @@ from typing import Dict, Any, Optional, Tuple
 from pathlib import Path
 from modules.core.training_monitor import TrainingMonitor
 
+# Importar la versión genérica
+from modules.core.generic_wandb_training import train_with_wandb_monitoring_generic
+
 
 def train_with_wandb_monitoring(
     model: torch.nn.Module,
@@ -26,9 +29,15 @@ def train_with_wandb_monitoring(
     save_dir: Optional[Path] = None,
     model_name: str = "best_model_wandb.pth",
     verbose: bool = True,
+    **kwargs
 ) -> Dict[str, Any]:
     """
-    Entrenar modelo con monitoreo en tiempo real usando wandb.
+    Entrenar modelo con monitoreo en tiempo real usando wandb (GENÉRICO).
+    
+    Esta función ahora es genérica y funciona con cualquier arquitectura:
+    - CNN1D, CNN2D, LSTM, etc.
+    - Detecta automáticamente la arquitectura basada en el modelo
+    - Usa funciones específicas si están disponibles, sino genéricas
 
     Args:
         model: Modelo PyTorch a entrenar
@@ -44,116 +53,28 @@ def train_with_wandb_monitoring(
         save_dir: Directorio para guardar el modelo
         model_name: Nombre del archivo del modelo
         verbose: Si imprimir progreso
+        **kwargs: Parámetros específicos de arquitectura (alpha, lambda_, etc.)
 
     Returns:
         Diccionario con resultados del entrenamiento
     """
-    if verbose:
-        print("=" * 70)
-        print("INICIANDO ENTRENAMIENTO CON MONITOREO WANDB")
-        print("=" * 70)
-
-    # Importar funciones de entrenamiento
-    from modules.models.cnn2d.training import train_one_epoch, evaluate
-
-    model.train()
-    best_val_f1 = 0.0
-    patience_counter = 0
-    training_history = {
-        "train_loss": [],
-        "train_f1": [],
-        "train_accuracy": [],
-        "train_precision": [],
-        "train_recall": [],
-        "val_loss": [],
-        "val_f1": [],
-        "val_accuracy": [],
-        "val_precision": [],
-        "val_recall": [],
-        "learning_rate": [],
-    }
-
-    for epoch in range(epochs):
-        # Entrenar una época
-        train_metrics = train_one_epoch(model, train_loader, optimizer, criterion, device)
-
-        # Evaluar
-        val_metrics = evaluate(model, val_loader, criterion, device)
-
-        # Guardar en historial
-        training_history["train_loss"].append(train_metrics["loss"])
-        training_history["train_f1"].append(train_metrics["f1"])
-        training_history["train_accuracy"].append(train_metrics["accuracy"])
-        training_history["train_precision"].append(train_metrics["precision"])
-        training_history["train_recall"].append(train_metrics["recall"])
-        training_history["val_loss"].append(val_metrics["loss"])
-        training_history["val_f1"].append(val_metrics["f1"])
-        training_history["val_accuracy"].append(val_metrics["accuracy"])
-        training_history["val_precision"].append(val_metrics["precision"])
-        training_history["val_recall"].append(val_metrics["recall"])
-        training_history["learning_rate"].append(optimizer.param_groups[0]["lr"])
-
-        # Loggear métricas a wandb y local
-        monitor.log(
-            epoch=epoch + 1,
-            train_loss=train_metrics["loss"],
-            train_f1=train_metrics["f1"],
-            train_accuracy=train_metrics["accuracy"],
-            train_precision=train_metrics["precision"],
-            train_recall=train_metrics["recall"],
-            val_loss=val_metrics["loss"],
-            val_f1=val_metrics["f1"],
-            val_accuracy=val_metrics["accuracy"],
-            val_precision=val_metrics["precision"],
-            val_recall=val_metrics["recall"],
-            learning_rate=optimizer.param_groups[0]["lr"],
-        )
-
-        # Plotear localmente cada N épocas
-        if monitor.should_plot(epoch + 1):
-            monitor.plot_local()
-
-        # Early stopping basado en val_f1
-        if val_metrics["f1"] > best_val_f1:
-            best_val_f1 = val_metrics["f1"]
-            patience_counter = 0
-            # Guardar mejor modelo
-            if save_dir:
-                torch.save(model.state_dict(), save_dir / model_name)
-        else:
-            patience_counter += 1
-
-        # Aplicar scheduler
-        if scheduler:
-            scheduler.step()
-
-        # Early stopping
-        if patience_counter >= early_stopping_patience:
-            if verbose:
-                print(f"\n⚠️  Early stopping en época {epoch + 1}")
-                print(f"    Mejor val_f1: {best_val_f1:.4f}")
-            break
-
-        # Imprimir progreso
-        if verbose and ((epoch + 1) % 5 == 0 or epoch == 0):
-            print(
-                f"Época {epoch + 1:3d}/{epochs} | "
-                f"Train F1: {train_metrics['f1']:.4f} | "
-                f"Val F1: {val_metrics['f1']:.4f} | "
-                f"LR: {optimizer.param_groups[0]['lr']:.6f}"
-            )
-
-    # Finalizar monitoreo
-    monitor.finish()
-    monitor.print_summary()
-
-    return {
-        "model": model,
-        "best_val_f1": best_val_f1,
-        "final_epoch": epoch + 1,
-        "history": training_history,
-        "early_stopped": patience_counter >= early_stopping_patience,
-    }
+    # Usar la versión genérica
+    return train_with_wandb_monitoring_generic(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        optimizer=optimizer,
+        criterion=criterion,
+        scheduler=scheduler,
+        monitor=monitor,
+        device=device,
+        epochs=epochs,
+        early_stopping_patience=early_stopping_patience,
+        save_dir=save_dir,
+        model_name=model_name,
+        verbose=verbose,
+        **kwargs
+    )
 
 
 def create_training_config(
