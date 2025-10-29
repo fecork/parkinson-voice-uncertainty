@@ -524,7 +524,7 @@ def load_checkpoint(
     optimizer: Optional[torch.optim.Optimizer] = None,
 ) -> Dict:
     """
-    Carga checkpoint.
+    Carga checkpoint de forma segura, compatible con checkpoints entrenados en GPU o CPU.
 
     Args:
         checkpoint_path: Ruta al checkpoint
@@ -534,7 +534,8 @@ def load_checkpoint(
     Returns:
         Dict con información del checkpoint
     """
-    checkpoint = torch.load(checkpoint_path)
+    # Cargar checkpoint de forma segura, siempre en CPU
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
     model.load_state_dict(checkpoint["model_state_dict"])
 
