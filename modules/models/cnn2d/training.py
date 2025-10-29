@@ -24,14 +24,21 @@ from sklearn.metrics import (
 )
 
 
+try:
+    import wandb
+except Exception:
+    wandb = None
+
+
 @contextlib.contextmanager
 def disable_wandb_hooks():
     """
     Context manager para desactivar temporalmente los hooks de wandb.
     Útil cuando se evalúa un modelo fuera del contexto de wandb.
     """
-    import wandb
-
+    if wandb is None:
+        yield
+        return
     original_wandb_run = wandb.run
     wandb.run = None
     try:
@@ -48,7 +55,6 @@ def disable_wandb_hooks():
 # EarlyStopping movida a modules.models.common.layers
 from ..common.training_utils import (
     EarlyStopping,
-    compute_metrics,
     compute_class_weights_auto,
 )
 
@@ -111,8 +117,10 @@ def train_one_epoch(
     metrics = {
         "loss": avg_loss,
         "accuracy": accuracy_score(all_labels, all_preds),
-        "precision": precision_score(all_labels, all_preds, zero_division=0),
-        "recall": recall_score(all_labels, all_preds, zero_division=0),
+        "precision": precision_score(
+            all_labels, all_preds, average="macro", zero_division=0
+        ),
+        "recall": recall_score(all_labels, all_preds, average="macro", zero_division=0),
         "f1": f1_score(all_labels, all_preds, average="macro", zero_division=0),
     }
 
@@ -121,7 +129,10 @@ def train_one_epoch(
 
 @torch.no_grad()
 def evaluate(
-    model: nn.Module, loader: DataLoader, criterion: nn.Module, device: torch.device
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device,
 ) -> Dict[str, float]:
     """
     Evalúa el modelo.
@@ -163,8 +174,10 @@ def evaluate(
     metrics = {
         "loss": avg_loss,
         "accuracy": accuracy_score(all_labels, all_preds),
-        "precision": precision_score(all_labels, all_preds, zero_division=0),
-        "recall": recall_score(all_labels, all_preds, zero_division=0),
+        "precision": precision_score(
+            all_labels, all_preds, average="macro", zero_division=0
+        ),
+        "recall": recall_score(all_labels, all_preds, average="macro", zero_division=0),
         "f1": f1_score(all_labels, all_preds, average="macro", zero_division=0),
     }
 
@@ -274,7 +287,10 @@ def train_model(
 
         # Actualizar scheduler si está disponible
         if scheduler is not None:
-            scheduler.step(val_metrics["loss"])
+            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                scheduler.step(val_metrics["loss"])
+            else:
+                scheduler.step()
 
         # Obtener métrica actual
         current_metric = val_metrics[monitor_metric]
@@ -288,7 +304,9 @@ def train_model(
 
         if is_better:
             best_val_metric = current_metric
-            best_model_state = model.state_dict().copy()
+            best_model_state = {
+                k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+            }
 
             if save_dir is not None:
                 checkpoint_path = save_dir / "best_model.pth"
@@ -444,13 +462,13 @@ def print_evaluation_report(eval_results: Dict, class_names: List[str] = None):
     print("REPORTE DE EVALUACIÓN")
     print("=" * 70)
 
-    print("\n📊 MATRIZ DE CONFUSIÓN:")
+    print("\nMATRIZ DE CONFUSIÓN:")
     cm = eval_results["confusion_matrix"]
-    print(f"              Pred HC  Pred PD")
+    print("              Pred HC  Pred PD")
     print(f"Real HC       {cm[0, 0]:7d}  {cm[0, 1]:7d}")
     print(f"Real PD       {cm[1, 0]:7d}  {cm[1, 1]:7d}")
 
-    print("\n📈 MÉTRICAS POR CLASE:")
+    print("\nMÉTRICAS POR CLASE:")
     report = eval_results["classification_report"]
     for class_name in class_names:
         if class_name in report:
@@ -461,7 +479,7 @@ def print_evaluation_report(eval_results: Dict, class_names: List[str] = None):
             print(f"  F1-Score:  {metrics['f1-score']:.4f}")
             print(f"  Support:   {metrics['support']}")
 
-    print("\n🎯 MÉTRICAS GLOBALES:")
+    print("\nMÉTRICAS GLOBALES:")
     print(f"  Accuracy:  {eval_results['accuracy']:.4f}")
     print(f"  F1 Macro:  {eval_results['f1_macro']:.4f}")
 
@@ -497,7 +515,7 @@ def save_training_results(results: Dict, save_dir: Path, prefix: str = "training
     with open(history_path, "w") as f:
         json.dump(serializable_history, f, indent=2)
 
-    print(f"💾 Historial guardado en: {history_path}")
+    print(f"Historial guardado en: {history_path}")
 
 
 def load_checkpoint(
@@ -523,9 +541,14 @@ def load_checkpoint(
     if optimizer is not None and "optimizer_state_dict" in checkpoint:
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-    print(f"✅ Checkpoint cargado desde: {checkpoint_path}")
+    print(f"Checkpoint cargado desde: {checkpoint_path}")
     print(f"   Época: {checkpoint.get('epoch', 'N/A')}")
-    print(f"   Val Loss: {checkpoint.get('val_loss', 'N/A'):.4f}")
+
+    val_loss = checkpoint.get("val_loss", None)
+    if isinstance(val_loss, (int, float)):
+        print(f"   Val Loss: {val_loss:.4f}")
+    else:
+        print("   Val Loss: N/A")
 
     return checkpoint
 
@@ -866,7 +889,9 @@ def train_model_da(
         # Guardar mejor modelo
         if val_metrics["loss_pd"] < best_val_loss_pd:
             best_val_loss_pd = val_metrics["loss_pd"]
-            best_model_state = model.state_dict().copy()
+            best_model_state = {
+                k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+            }
 
             if save_dir is not None:
                 checkpoint_path = save_dir / "best_model_da.pth"
@@ -1067,10 +1092,7 @@ def train_model_da_kfold(
         Dict con métricas agregadas de todos los folds
     """
     from torch.utils.data import DataLoader, Subset
-    from .utils import (
-        create_10fold_splits_by_speaker,
-        compute_class_weights_auto,
-    )
+    from .utils import create_10fold_splits_by_speaker
 
     if save_dir is not None:
         save_dir = Path(save_dir)
@@ -1166,7 +1188,7 @@ def train_model_da_kfold(
             optimizer, step_size=30, gamma=0.1
         )
 
-        print(f"\n   ⚙️  Configuración:")
+        print("\n   Configuración:")
         print(f"      Optimizer: SGD (lr={lr}, momentum=0.9, wd=1e-4)")
         print(f"      LR Scheduler: StepLR (step=30, gamma=0.1)")
         print(f"      Lambda GRL: {lambda_constant} (constante)")
@@ -1209,7 +1231,7 @@ def train_model_da_kfold(
 
         fold_histories.append(fold_results["history"])
 
-        print(f"\n   ✅ Fold {fold_idx + 1} completado:")
+        print(f"\n   Fold {fold_idx + 1} completado:")
         print(f"      Best val_loss_pd: {fold_results['best_val_loss_pd']:.4f}")
         print(f"      Tiempo: {fold_results['total_time'] / 60:.1f} min")
 
@@ -1222,7 +1244,7 @@ def train_model_da_kfold(
     mean_loss = np.mean(val_losses)
     std_loss = np.std(val_losses)
 
-    print(f"\n📊 Métricas agregadas (10 folds):")
+    print("\nMétricas agregadas (10 folds):")
     print(f"   Val Loss PD: {mean_loss:.4f} ± {std_loss:.4f}")
     print(f"\n   Por fold:")
     for fold in all_fold_results:
@@ -1256,7 +1278,7 @@ def train_model_da_kfold(
                 f,
                 indent=2,
             )
-        print(f"\n💾 Resultados guardados: {results_path}")
+        print(f"\nResultados guardados: {results_path}")
 
     print("=" * 70 + "\n")
 
