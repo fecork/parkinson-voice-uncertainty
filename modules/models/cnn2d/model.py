@@ -126,6 +126,50 @@ class CNN2D(nn.Module):
         logits = self.pd_head(features)
         return features, logits
 
+    @classmethod
+    def from_config(cls, config: Dict[str, Any]):
+        """Crea una instancia usando los mismos args/defectos del __init__ (sin duplicarlos)."""
+        sig = inspect.signature(cls.__init__)
+        valid = {k for k in sig.parameters if k != "self"}
+        kwargs = {k: v for k, v in config.items() if k in valid}
+        return cls(**kwargs)  # el __init__ completa defaults
+
+    def get_config(self) -> Dict[str, Any]:
+        """Config efectiva de ESTA instancia (sirve para recrearla 1:1)."""
+        return {
+            "n_classes": self.n_classes,
+            "p_drop_conv": self.p_drop_conv,
+            "p_drop_fc": self.p_drop_fc,
+            "input_shape": self.input_shape,
+            "filters_1": self.filters_1,
+            "filters_2": self.filters_2,
+            "kernel_size_1": self.kernel_size_1,
+            "kernel_size_2": self.kernel_size_2,
+            "dense_units": self.dense_units,
+        }
+
+    def new_like(self, **overrides):
+        """
+        Crea una NUEVA instancia con la misma config que esta,
+        permitiendo overrides puntuales.
+        """
+        cfg = self.get_config()
+        cfg.update(overrides)
+        return type(self).from_config(cfg)
+
+    def to_builder(self, **overrides):
+        """
+        Devuelve un CALLABLE (sin args) que crea nuevas instancias idénticas.
+        Útil para pasar a run_all_checks(build_model=...).
+        """
+        cfg = self.get_config()
+        cfg.update(overrides)
+
+        def _factory():
+            return type(self).from_config(cfg)
+
+        return _factory
+
 
 # ============================================================
 # MC DROPOUT

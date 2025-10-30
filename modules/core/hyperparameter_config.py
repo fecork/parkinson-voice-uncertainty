@@ -1,7 +1,8 @@
 """
 Sistema de Configuración de Hiperparámetros
 ==========================================
-Permite elegir entre hiperparámetros del paper de Ibarra o los optimizados por Optuna.
+Permite elegir entre hiperparámetros del paper de Ibarra o los optimizados
+por Optuna.
 """
 
 import json
@@ -74,7 +75,9 @@ class HyperparameterManager:
     def get_ibarra_hyperparameters(self) -> Dict[str, Any]:
         """Obtiene los hiperparámetros exactos del paper de Ibarra."""
         print("📚 Usando hiperparámetros del paper de Ibarra 2023")
-        return self.ibarra_params.to_dict()
+        base_params = self.ibarra_params.to_dict()
+        overrides = self._load_config_dict().get("ibarra_hyperparameters", {})
+        return self._apply_overrides(base_params, overrides)
 
     def get_optuna_hyperparameters(
         self, optuna_results_path: Optional[Path] = None
@@ -103,12 +106,18 @@ class HyperparameterManager:
 
         if optuna_results_path is None or not optuna_results_path.exists():
             print(
-                "⚠️  No se encontraron resultados de Optuna, usando parámetros de Ibarra"
+                (
+                    "⚠️  No se encontraron resultados de Optuna, usando "
+                    "parámetros de Ibarra"
+                )
             )
             return self.get_ibarra_hyperparameters()
 
         print(
-            f"🔍 Cargando mejores hiperparámetros de Optuna desde: {optuna_results_path}"
+            (
+                "🔍 Cargando mejores hiperparámetros de Optuna desde: "
+                f"{optuna_results_path}"
+            )
         )
 
         try:
@@ -163,6 +172,20 @@ class HyperparameterManager:
 
         return complete_params
 
+    def _load_config_dict(self) -> Dict[str, Any]:
+        """Carga el JSON de configuración o devuelve dict vacío si falla."""
+        try:
+            return self.load_config()
+        except Exception:
+            return {}
+
+    def _apply_overrides(self, base: Dict[str, Any], overrides: Any) -> Dict[str, Any]:
+        """Aplica overrides válidos sobre base, ignorando claves desconocidas."""
+        if not isinstance(overrides, dict) or not overrides:
+            return base
+        valid = {k: v for k, v in overrides.items() if k in base}
+        return {**base, **valid}
+
     def save_config(self, use_ibarra: bool = True, save_path: Optional[Path] = None):
         """
         Guarda la configuración actual.
@@ -186,7 +209,7 @@ class HyperparameterManager:
         with open(save_path, "w") as f:
             json.dump(config, f, indent=2)
 
-        print(f"💾 Configuración guardada en: {save_path}")
+        print((f"💾 Configuración guardada en: {save_path}"))
 
     def load_config(self, config_path: Optional[Path] = None) -> Dict[str, Any]:
         """
@@ -202,7 +225,7 @@ class HyperparameterManager:
             config_path = self.config_path
 
         if not config_path.exists():
-            print(f"⚠️  Archivo de configuración no encontrado: {config_path}")
+            print((f"⚠️  Archivo de configuración no encontrado: {config_path}"))
             print("🔄 Usando configuración por defecto (Ibarra)")
             return {"use_ibarra_hyperparameters": True}
 
@@ -210,11 +233,11 @@ class HyperparameterManager:
             with open(config_path, "r") as f:
                 config = json.load(f)
 
-            print(f"✅ Configuración cargada desde: {config_path}")
+            print((f"✅ Configuración cargada desde: {config_path}"))
             return config
 
         except Exception as e:
-            print(f"❌ Error cargando configuración: {e}")
+            print((f"❌ Error cargando configuración: {e}"))
             print("🔄 Usando configuración por defecto (Ibarra)")
             return {"use_ibarra_hyperparameters": True}
 

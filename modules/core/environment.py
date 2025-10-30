@@ -130,6 +130,7 @@ def get_project_paths(
         "cache_original": base_path / "cache" / "original",
         "cache_augmented": base_path / "cache" / "augmented",
         "cache_sequences": base_path / "cache" / "sequences",
+        "config": base_path / "config",
         "results": base_path / "results",
         "data": base_path / "data",
         "notebooks": base_path / "notebooks",

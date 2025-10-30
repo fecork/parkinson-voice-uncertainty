@@ -57,6 +57,23 @@ class TestHyperparameterSystem(unittest.TestCase):
         config = self.manager.load_config()
         self.assertTrue(config["use_ibarra_hyperparameters"])
 
+    def test_ibarra_overrides_from_config(self):
+        """Los overrides en config deben reflejarse en get_ibarra_hyperparameters."""
+        override_config = {
+            "use_ibarra_hyperparameters": True,
+            "ibarra_hyperparameters": {
+                "filters_1": 64,
+                "kernel_size_1": 6,
+                "kernel_size_2": 9,
+            },
+        }
+
+        with open(self.temp_config_path, "w") as f:
+            json.dump(override_config, f)
+
+        params = self.manager.get_ibarra_hyperparameters()
+        self.assertEqual(params["filters_1"], 64)
+
     def test_hyperparameter_selection(self):
         """Probar selección de hiperparámetros."""
         # Probar con Ibarra
