@@ -208,6 +208,7 @@ def train_model(
     verbose: bool = True,
     scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
     monitor_metric: str = "f1",  # NUEVO: métrica a monitorear ("loss" o "f1")
+    monitor: Optional[Any] = None,  # NUEVO: Monitor para logging en tiempo real (wandb)
 ) -> Dict:
     """
     Pipeline completo de entrenamiento.
@@ -226,6 +227,9 @@ def train_model(
         scheduler: Scheduler opcional para ajuste de learning rate
         monitor_metric: Métrica para early stopping ("loss" o "f1")
                        Default: "f1" (recomendado para datasets desbalanceados)
+        monitor: Monitor opcional (TrainingMonitor) para logging en tiempo real a wandb.
+                Si se proporciona, las métricas se loggean después de cada época.
+                Default: None
 
     Returns:
         Dict con historial de entrenamiento y mejor modelo
@@ -299,7 +303,34 @@ def train_model(
         history["val_recall"].append(val_metrics["recall"])
         history["val_specificity"].append(val_metrics["specificity"])
 
-        # Actualizar scheduler si está disponible
+        # Capturar learning rate ANTES de actualizar el scheduler
+        current_lr = optimizer.param_groups[0]["lr"]
+
+        # Logging en tiempo real a wandb si el monitor está disponible
+        if monitor is not None:
+            try:
+                monitor.log(
+                    epoch=epoch + 1,
+                    train_loss=train_metrics["loss"],
+                    train_f1=train_metrics["f1"],
+                    train_accuracy=train_metrics["accuracy"],
+                    train_recall=train_metrics["recall"],
+                    train_specificity=train_metrics["specificity"],
+                    val_loss=val_metrics["loss"],
+                    val_f1=val_metrics["f1"],
+                    val_accuracy=val_metrics["accuracy"],
+                    val_recall=val_metrics["recall"],
+                    val_specificity=val_metrics["specificity"],
+                    learning_rate=current_lr,
+                )
+                # Plotear localmente cada N épocas si está habilitado
+                if hasattr(monitor, 'should_plot') and monitor.should_plot(epoch + 1):
+                    monitor.plot_local()
+            except Exception as e:
+                if verbose:
+                    print(f"⚠️  Error logging a wandb: {e}")
+
+        # Actualizar scheduler si está disponible (después del logging)
         if scheduler is not None:
             if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                 scheduler.step(val_metrics["loss"])
