@@ -124,32 +124,12 @@ def train_with_wandb_monitoring_generic(
                 save_dir=save_dir,
                 verbose=verbose,
                 scheduler=scheduler,
-                monitor_metric="f1"
+                monitor_metric="f1",
+                monitor=monitor  # Pasar monitor para logging en tiempo real
             )
         
         # Convertir resultados al formato esperado por WanDB
         history = training_results["history"]
-        
-        # Loggear métricas a wandb
-        for epoch in range(len(history["train_loss"])):
-            monitor.log(
-                epoch=epoch + 1,
-                train_loss=history["train_loss"][epoch],
-                train_f1=history["train_f1"][epoch],
-                train_accuracy=history["train_acc"][epoch],
-                train_recall=history["train_recall"][epoch],
-                train_specificity=history["train_specificity"][epoch],
-                val_loss=history["val_loss"][epoch],
-                val_f1=history["val_f1"][epoch],
-                val_accuracy=history["val_acc"][epoch],
-                val_recall=history["val_recall"][epoch],
-                val_specificity=history["val_specificity"][epoch],
-                learning_rate=optimizer.param_groups[0]["lr"],
-            )
-            
-            # Plotear localmente cada N épocas
-            if monitor.should_plot(epoch + 1):
-                monitor.plot_local()
         
         # Finalizar monitoreo
         monitor.finish()
