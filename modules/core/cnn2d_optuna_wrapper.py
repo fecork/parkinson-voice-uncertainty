@@ -19,7 +19,7 @@ import json
 
 from modules.core.optuna_optimization import OptunaModelWrapper, OptunaOptimizer
 from modules.models.cnn2d.model import CNN2D
-from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
+from sklearn.metrics import f1_score, accuracy_score, recall_score, confusion_matrix
 
 
 class CNN2DOptunaWrapper(OptunaModelWrapper):
@@ -185,20 +185,22 @@ class CNN2DOptunaWrapper(OptunaModelWrapper):
                     val_preds.extend(predicted.cpu().numpy())
                     val_labels.extend(batch_y.cpu().numpy())
 
-            # Calcular métricas
-            f1 = f1_score(val_labels, val_preds, average="macro")
+            # Calcular métricas según paper Ibarra 2023
+            f1 = f1_score(val_labels, val_preds, average="binary", pos_label=1)
             acc = accuracy_score(val_labels, val_preds)
-            prec = precision_score(val_labels, val_preds, average="macro")
-            rec = recall_score(val_labels, val_preds, average="macro")
+            rec = recall_score(val_labels, val_preds, average="binary", pos_label=1)
+            cm = confusion_matrix(val_labels, val_preds, labels=[0, 1])
+            tn, fp, fn, tp = cm.ravel()
+            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
 
             # Actualizar mejor F1
             if f1 > best_f1:
                 best_f1 = f1
                 best_metrics = {
-                    "f1_macro": f1,
+                    "f1": f1,
                     "accuracy": acc,
-                    "precision_macro": prec,
-                    "recall_macro": rec,
+                    "recall": rec,
+                    "specificity": specificity,
                 }
 
             # Reportar métrica intermedia a Optuna (para pruning)
@@ -516,27 +518,29 @@ def _objective_with_checkpoint(
                 val_preds.extend(predicted.cpu().numpy())
                 val_labels.extend(batch_y.cpu().numpy())
 
-        # Calcular métricas
+        # Calcular métricas según paper Ibarra 2023
         from sklearn.metrics import (
             f1_score,
             accuracy_score,
-            precision_score,
             recall_score,
+            confusion_matrix,
         )
 
-        f1 = f1_score(val_labels, val_preds, average="macro")
+        f1 = f1_score(val_labels, val_preds, average="binary", pos_label=1)
         acc = accuracy_score(val_labels, val_preds)
-        prec = precision_score(val_labels, val_preds, average="macro")
-        rec = recall_score(val_labels, val_preds, average="macro")
+        rec = recall_score(val_labels, val_preds, average="binary", pos_label=1)
+        cm = confusion_matrix(val_labels, val_preds, labels=[0, 1])
+        tn, fp, fn, tp = cm.ravel()
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
 
         # Actualizar mejor F1 y contador de épocas sin mejora
         if f1 > best_f1:
             best_f1 = f1
             best_metrics = {
-                "f1_macro": f1,
+                "f1": f1,
                 "accuracy": acc,
-                "precision_macro": prec,
-                "recall_macro": rec,
+                "recall": rec,
+                "specificity": specificity,
             }
             epochs_without_improvement = 0
         else:

@@ -8,7 +8,8 @@ Diseñado para espectrogramas Mel (65×41) con dropout para MC Dropout.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Tuple
+import inspect
+from typing import Dict, Any, Optional, Tuple
 
 # Importar componentes compartidos
 from ..common.layers import (
@@ -128,7 +129,10 @@ class CNN2D(nn.Module):
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]):
-        """Crea una instancia usando los mismos args/defectos del __init__ (sin duplicarlos)."""
+        """
+        Crea una instancia usando los mismos args/defectos del __init__
+        (sin duplicarlos).
+        """
         sig = inspect.signature(cls.__init__)
         valid = {k for k in sig.parameters if k != "self"}
         kwargs = {k: v for k, v in config.items() if k in valid}
@@ -138,8 +142,8 @@ class CNN2D(nn.Module):
         """Config efectiva de ESTA instancia (sirve para recrearla 1:1)."""
         return {
             "n_classes": self.n_classes,
-            "p_drop_conv": self.p_drop_conv,
-            "p_drop_fc": self.p_drop_fc,
+            "p_drop_conv": 0.0,  # self.p_drop_conv,
+            "p_drop_fc": 0.0,  # self.p_drop_fc,
             "input_shape": self.input_shape,
             "filters_1": self.filters_1,
             "filters_2": self.filters_2,

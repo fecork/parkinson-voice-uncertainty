@@ -35,6 +35,7 @@ class TrainingMonitor:
         wandb_key: Optional[str] = None,
         tags: Optional[list] = None,
         notes: Optional[str] = None,
+        enable_local_plots: bool = False,
     ):
         """
         Inicializar monitor de entrenamiento.
@@ -48,12 +49,14 @@ class TrainingMonitor:
             wandb_key: API key de wandb (opcional)
             tags: Tags para el experimento
             notes: Notas para el experimento
+            enable_local_plots: Si generar gráficas locales (False = solo logs + W&B)
         """
         self.project_name = project_name
         self.experiment_name = experiment_name
         self.config = config or {}
         self.plot_every = plot_every
         self.use_wandb = use_wandb
+        self.enable_local_plots = enable_local_plots
         self.tags = tags or []
         self.notes = notes or ""
         self.metrics = defaultdict(list)
@@ -183,6 +186,8 @@ class TrainingMonitor:
 
     def should_plot(self, epoch: int):
         """Determinar si debe plotear en esta época."""
+        if not self.enable_local_plots:
+            return False
         return epoch % self.plot_every == 0 or epoch == 0
 
     def get_best_metrics(self):
@@ -227,6 +232,7 @@ def create_training_monitor(
     wandb_key: Optional[str] = None,
     tags: Optional[list] = None,
     notes: Optional[str] = None,
+    enable_local_plots: bool = False,
 ) -> TrainingMonitor:
     """
     Crear monitor de entrenamiento con configuración.
@@ -238,6 +244,7 @@ def create_training_monitor(
         wandb_key: API key de wandb
         tags: Tags para el experimento
         notes: Notas para el experimento
+        enable_local_plots: Si generar gráficas locales (False = solo logs + W&B)
 
     Returns:
         TrainingMonitor configurado
@@ -250,6 +257,7 @@ def create_training_monitor(
         wandb_key=wandb_key,
         tags=tags,
         notes=notes,
+        enable_local_plots=enable_local_plots,
     )
 
 

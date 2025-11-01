@@ -82,7 +82,7 @@ def train_one_epoch(
         device: Device para cómputo
 
     Returns:
-        Dict con métricas: loss, accuracy, precision, recall, f1
+        Dict con métricas: loss, accuracy, recall (sensitivity), specificity, f1
     """
     model.train()
 
@@ -114,14 +114,17 @@ def train_one_epoch(
     n_samples = len(all_labels)
     avg_loss = total_loss / n_samples
 
+    # Calcular métricas según paper Ibarra 2023: ACC, SEN, SPE, F1
+    cm = confusion_matrix(all_labels, all_preds, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+
     metrics = {
         "loss": avg_loss,
         "accuracy": accuracy_score(all_labels, all_preds),
-        "precision": precision_score(
-            all_labels, all_preds, average="macro", zero_division=0
-        ),
-        "recall": recall_score(all_labels, all_preds, average="macro", zero_division=0),
-        "f1": f1_score(all_labels, all_preds, average="macro", zero_division=0),
+        "recall": recall_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
+        "specificity": specificity,
+        "f1": f1_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
     }
 
     return metrics
@@ -144,7 +147,7 @@ def evaluate(
         device: Device para cómputo
 
     Returns:
-        Dict con métricas: loss, accuracy, precision, recall, f1
+        Dict con métricas: loss, accuracy, recall (sensitivity), specificity, f1
     """
     model.eval()
 
@@ -171,14 +174,17 @@ def evaluate(
     n_samples = len(all_labels)
     avg_loss = total_loss / n_samples
 
+    # Calcular métricas según paper Ibarra 2023: ACC, SEN, SPE, F1
+    cm = confusion_matrix(all_labels, all_preds, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+
     metrics = {
         "loss": avg_loss,
         "accuracy": accuracy_score(all_labels, all_preds),
-        "precision": precision_score(
-            all_labels, all_preds, average="macro", zero_division=0
-        ),
-        "recall": recall_score(all_labels, all_preds, average="macro", zero_division=0),
-        "f1": f1_score(all_labels, all_preds, average="macro", zero_division=0),
+        "recall": recall_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
+        "specificity": specificity,
+        "f1": f1_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
     }
 
     return metrics
@@ -241,9 +247,13 @@ def train_model(
         "train_loss": [],
         "train_acc": [],
         "train_f1": [],
+        "train_recall": [],
+        "train_specificity": [],
         "val_loss": [],
         "val_acc": [],
         "val_f1": [],
+        "val_recall": [],
+        "val_specificity": [],
     }
 
     # Inicializar best metric según lo que monitoreamos
@@ -281,9 +291,13 @@ def train_model(
         history["train_loss"].append(train_metrics["loss"])
         history["train_acc"].append(train_metrics["accuracy"])
         history["train_f1"].append(train_metrics["f1"])
+        history["train_recall"].append(train_metrics["recall"])
+        history["train_specificity"].append(train_metrics["specificity"])
         history["val_loss"].append(val_metrics["loss"])
         history["val_acc"].append(val_metrics["accuracy"])
         history["val_f1"].append(val_metrics["f1"])
+        history["val_recall"].append(val_metrics["recall"])
+        history["val_specificity"].append(val_metrics["specificity"])
 
         # Actualizar scheduler si está disponible
         if scheduler is not None:
@@ -330,10 +344,16 @@ def train_model(
         if verbose:
             print(
                 f"Época {epoch + 1:3d}/{n_epochs} | "
-                f"Train Loss: {train_metrics['loss']:.4f} | "
-                f"Train F1: {train_metrics['f1']:.4f} | "
-                f"Val Loss: {val_metrics['loss']:.4f} | "
-                f"Val F1: {val_metrics['f1']:.4f} | "
+                f"Train - Loss: {train_metrics['loss']:.4f} | "
+                f"F1: {train_metrics['f1']:.4f} | "
+                f"Acc: {train_metrics['accuracy']:.4f} | "
+                f"Rec: {train_metrics['recall']:.4f} | "
+                f"Spec: {train_metrics['specificity']:.4f} | "
+                f"Val - Loss: {val_metrics['loss']:.4f} | "
+                f"F1: {val_metrics['f1']:.4f} | "
+                f"Acc: {val_metrics['accuracy']:.4f} | "
+                f"Rec: {val_metrics['recall']:.4f} | "
+                f"Spec: {val_metrics['specificity']:.4f} | "
                 f"Time: {epoch_time:.1f}s"
             )
 

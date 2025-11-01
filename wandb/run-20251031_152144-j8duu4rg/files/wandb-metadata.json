@@ -1,0 +1,39 @@
+{
+  "os": "Linux-6.6.105+-x86_64-with-glibc2.35",
+  "python": "CPython 3.12.12",
+  "startedAt": "2025-10-31T15:21:44.906199Z",
+  "program": "cnn2d_training.ipynb",
+  "git": {
+    "remote": "https://github.com/fecork/parkinson-voice-uncertainty.git",
+    "commit": "c5390b2b1e856dd099d2376c4ff5552bec0b4ff9"
+  },
+  "email": "fecork88@gmail.com",
+  "root": "/content/drive/Othercomputers/ZenBook/parkinson-voice-uncertainty",
+  "host": "e2c60c0a88b5",
+  "executable": "/usr/bin/python3",
+  "colab": "https://colab.research.google.com/notebook#fileId=1EAdebEH1x_s-pFpKs6lwQEaQRSsFC2vx",
+  "cpu_count": 1,
+  "cpu_count_logical": 2,
+  "gpu": "Tesla T4",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "120942624768",
+      "used": "45068083200"
+    }
+  },
+  "memory": {
+    "total": "13605855232"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "Tesla T4",
+      "memoryTotal": "16106127360",
+      "cudaCores": 2560,
+      "architecture": "Turing",
+      "uuid": "GPU-9eea33b5-188b-50a0-54e5-3b460f76f59d"
+    }
+  ],
+  "cudaVersion": "12.4",
+  "writerId": "b4d63ui8mxf7qbjytde2ajmx2mmcl4ri"
+}

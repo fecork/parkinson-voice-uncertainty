@@ -137,9 +137,13 @@ def train_with_wandb_monitoring_generic(
                 train_loss=history["train_loss"][epoch],
                 train_f1=history["train_f1"][epoch],
                 train_accuracy=history["train_acc"][epoch],
+                train_recall=history["train_recall"][epoch],
+                train_specificity=history["train_specificity"][epoch],
                 val_loss=history["val_loss"][epoch],
                 val_f1=history["val_f1"][epoch],
                 val_accuracy=history["val_acc"][epoch],
+                val_recall=history["val_recall"][epoch],
+                val_specificity=history["val_specificity"][epoch],
                 learning_rate=optimizer.param_groups[0]["lr"],
             )
             
@@ -159,13 +163,13 @@ def train_with_wandb_monitoring_generic(
                 "train_loss": history["train_loss"],
                 "train_f1": history["train_f1"],
                 "train_accuracy": history["train_acc"],
-                "train_precision": [0.0] * len(history["train_loss"]),  # No disponible en train_model
-                "train_recall": [0.0] * len(history["train_loss"]),     # No disponible en train_model
+                "train_recall": history["train_recall"],
+                "train_specificity": history["train_specificity"],
                 "val_loss": history["val_loss"],
                 "val_f1": history["val_f1"],
                 "val_accuracy": history["val_acc"],
-                "val_precision": [0.0] * len(history["val_loss"]),      # No disponible en train_model
-                "val_recall": [0.0] * len(history["val_loss"]),         # No disponible en train_model
+                "val_recall": history["val_recall"],
+                "val_specificity": history["val_specificity"],
                 "learning_rate": [optimizer.param_groups[0]["lr"]] * len(history["train_loss"]),
             },
             "early_stopped": len(history["train_loss"]) < epochs,
@@ -182,13 +186,13 @@ def train_with_wandb_monitoring_generic(
         "train_loss": [],
         "train_f1": [],
         "train_accuracy": [],
-        "train_precision": [],
         "train_recall": [],
+        "train_specificity": [],
         "val_loss": [],
         "val_f1": [],
         "val_accuracy": [],
-        "val_precision": [],
         "val_recall": [],
+        "val_specificity": [],
         "learning_rate": [],
     }
     
@@ -232,13 +236,13 @@ def train_with_wandb_monitoring_generic(
         training_history["train_loss"].append(train_metrics["loss"])
         training_history["train_f1"].append(train_metrics["f1"])
         training_history["train_accuracy"].append(train_metrics["accuracy"])
-        training_history["train_precision"].append(train_metrics["precision"])
         training_history["train_recall"].append(train_metrics["recall"])
+        training_history["train_specificity"].append(train_metrics["specificity"])
         training_history["val_loss"].append(val_metrics["loss"])
         training_history["val_f1"].append(val_metrics["f1"])
         training_history["val_accuracy"].append(val_metrics["accuracy"])
-        training_history["val_precision"].append(val_metrics["precision"])
         training_history["val_recall"].append(val_metrics["recall"])
+        training_history["val_specificity"].append(val_metrics["specificity"])
         training_history["learning_rate"].append(optimizer.param_groups[0]["lr"])
         
         # Loggear métricas a wandb y local
@@ -247,13 +251,13 @@ def train_with_wandb_monitoring_generic(
             train_loss=train_metrics["loss"],
             train_f1=train_metrics["f1"],
             train_accuracy=train_metrics["accuracy"],
-            train_precision=train_metrics["precision"],
             train_recall=train_metrics["recall"],
+            train_specificity=train_metrics["specificity"],
             val_loss=val_metrics["loss"],
             val_f1=val_metrics["f1"],
             val_accuracy=val_metrics["accuracy"],
-            val_precision=val_metrics["precision"],
             val_recall=val_metrics["recall"],
+            val_specificity=val_metrics["specificity"],
             learning_rate=optimizer.param_groups[0]["lr"],
         )
         
@@ -286,8 +290,16 @@ def train_with_wandb_monitoring_generic(
         if verbose and ((epoch + 1) % 5 == 0 or epoch == 0):
             print(
                 f"Época {epoch + 1:3d}/{epochs} | "
-                f"Train F1: {train_metrics['f1']:.4f} | "
-                f"Val F1: {val_metrics['f1']:.4f} | "
+                f"Train - Loss: {train_metrics['loss']:.4f} | "
+                f"F1: {train_metrics['f1']:.4f} | "
+                f"Acc: {train_metrics['accuracy']:.4f} | "
+                f"Rec: {train_metrics['recall']:.4f} | "
+                f"Spec: {train_metrics['specificity']:.4f} | "
+                f"Val - Loss: {val_metrics['loss']:.4f} | "
+                f"F1: {val_metrics['f1']:.4f} | "
+                f"Acc: {val_metrics['accuracy']:.4f} | "
+                f"Rec: {val_metrics['recall']:.4f} | "
+                f"Spec: {val_metrics['specificity']:.4f} | "
                 f"LR: {optimizer.param_groups[0]['lr']:.6f}"
             )
     

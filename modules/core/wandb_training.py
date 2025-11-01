@@ -140,6 +140,8 @@ def setup_wandb_training(
     from modules.core.training_monitor import create_training_monitor
 
     # Crear monitor
+    # Por defecto, desactivar gráficas locales (solo logs + W&B)
+    enable_plots = config.get("enable_local_plots", False)
     monitor = create_training_monitor(
         config=config,
         experiment_name=config["experiment_name"],
@@ -147,6 +149,7 @@ def setup_wandb_training(
         wandb_key=wandb_config["api_key"],
         tags=wandb_config["tags"],
         notes=wandb_config["notes"],
+        enable_local_plots=enable_plots,
     )
 
     # Registrar modelo en wandb

@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from typing import Dict, Any, Optional, Callable
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, recall_score, f1_score, confusion_matrix
 
 
 def train_one_epoch_generic(
@@ -35,7 +35,7 @@ def train_one_epoch_generic(
                    Si no se proporciona, usa model(batch) directamente
     
     Returns:
-        Dict con métricas: loss, accuracy, precision, recall, f1
+        Dict con métricas: loss, accuracy, recall (sensitivity), specificity, f1
     """
     model.train()
     
@@ -89,12 +89,17 @@ def train_one_epoch_generic(
     n_samples = len(all_labels)
     avg_loss = total_loss / n_samples
     
+    # Calcular métricas según paper Ibarra 2023: ACC, SEN, SPE, F1
+    cm = confusion_matrix(all_labels, all_preds, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    
     metrics = {
         "loss": avg_loss,
         "accuracy": accuracy_score(all_labels, all_preds),
-        "precision": precision_score(all_labels, all_preds, zero_division=0),
-        "recall": recall_score(all_labels, all_preds, zero_division=0),
-        "f1": f1_score(all_labels, all_preds, average="macro", zero_division=0),
+        "recall": recall_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
+        "specificity": specificity,
+        "f1": f1_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
     }
     
     return metrics
@@ -119,7 +124,7 @@ def evaluate_generic(
         forward_fn: Función personalizada para forward pass (opcional)
     
     Returns:
-        Dict con métricas: loss, accuracy, precision, recall, f1
+        Dict con métricas: loss, accuracy, recall (sensitivity), specificity, f1
     """
     model.eval()
     
@@ -168,12 +173,17 @@ def evaluate_generic(
     n_samples = len(all_labels)
     avg_loss = total_loss / n_samples
     
+    # Calcular métricas según paper Ibarra 2023: ACC, SEN, SPE, F1
+    cm = confusion_matrix(all_labels, all_preds, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    
     metrics = {
         "loss": avg_loss,
         "accuracy": accuracy_score(all_labels, all_preds),
-        "precision": precision_score(all_labels, all_preds, zero_division=0),
-        "recall": recall_score(all_labels, all_preds, zero_division=0),
-        "f1": f1_score(all_labels, all_preds, average="macro", zero_division=0),
+        "recall": recall_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
+        "specificity": specificity,
+        "f1": f1_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
     }
     
     return metrics
