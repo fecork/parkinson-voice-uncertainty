@@ -1,0 +1,56 @@
+_wandb:
+    value:
+        cli_version: 0.22.2
+        e:
+            qj7peqln85bg0l4wm0qdzly5hyvux1rb:
+                codePath: research\cnn2d_training.ipynb
+                codePathLocal: cnn2d_training.ipynb
+                cpu_count: 4
+                cpu_count_logical: 8
+                disk:
+                    /:
+                        total: "998656958464"
+                        used: "689489473536"
+                email: fecork88@gmail.com
+                executable: c:\Users\fecor\AppData\Local\Programs\Python\Python310\python.exe
+                git:
+                    commit: c5390b2b1e856dd099d2376c4ff5552bec0b4ff9
+                    remote: https://github.com/fecork/parkinson-voice-uncertainty.git
+                host: LAPTOP-JTCP4GUT
+                memory:
+                    total: "16856498176"
+                os: Windows-10-10.0.26200-SP0
+                program: c:\Proyectos\PHD- Parkinson - Incertidumbre - Prototipo\parkinson-voice-uncertainty\research\cnn2d_training.ipynb
+                python: CPython 3.10.3
+                root: c:\Proyectos\PHD- Parkinson - Incertidumbre - Prototipo\parkinson-voice-uncertainty\research
+                startedAt: "2025-11-01T16:30:06.440594Z"
+                writerId: qj7peqln85bg0l4wm0qdzly5hyvux1rb
+        m: []
+        python_version: 3.10.3
+        t:
+            "1":
+                - 1
+                - 5
+                - 35
+                - 41
+                - 53
+                - 105
+            "2":
+                - 1
+                - 5
+                - 35
+                - 41
+                - 53
+                - 105
+            "3":
+                - 2
+                - 13
+            "4": 3.10.3
+            "5": 0.22.2
+            "8":
+                - 1
+                - 3
+            "10":
+                - 20
+            "12": 0.22.2
+            "13": windows-amd64

@@ -1,0 +1,64 @@
+_wandb:
+    value:
+        cli_version: 0.22.2
+        e:
+            bcek2noo8gcathb03y9qzku5wr5yqz1u:
+                colab: https://colab.research.google.com/notebook#fileId=1EAdebEH1x_s-pFpKs6lwQEaQRSsFC2vx
+                cpu_count: 1
+                cpu_count_logical: 2
+                cudaVersion: "12.4"
+                disk:
+                    /:
+                        total: "120942624768"
+                        used: "45072855040"
+                email: fecork88@gmail.com
+                executable: /usr/bin/python3
+                git:
+                    commit: c5390b2b1e856dd099d2376c4ff5552bec0b4ff9
+                    remote: https://github.com/fecork/parkinson-voice-uncertainty.git
+                gpu: Tesla T4
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Turing
+                      cudaCores: 2560
+                      memoryTotal: "16106127360"
+                      name: Tesla T4
+                      uuid: GPU-9eea33b5-188b-50a0-54e5-3b460f76f59d
+                host: e2c60c0a88b5
+                memory:
+                    total: "13605855232"
+                os: Linux-6.6.105+-x86_64-with-glibc2.35
+                program: cnn2d_training.ipynb
+                python: CPython 3.12.12
+                root: /content/drive/Othercomputers/ZenBook/parkinson-voice-uncertainty
+                startedAt: "2025-10-31T15:56:40.908654Z"
+                writerId: bcek2noo8gcathb03y9qzku5wr5yqz1u
+        m: []
+        python_version: 3.12.12
+        t:
+            "1":
+                - 1
+                - 5
+                - 35
+                - 41
+                - 53
+                - 105
+            "2":
+                - 1
+                - 5
+                - 35
+                - 41
+                - 53
+                - 105
+            "3":
+                - 2
+                - 13
+            "4": 3.12.12
+            "5": 0.22.2
+            "8":
+                - 1
+                - 12
+            "10":
+                - 20
+            "12": 0.22.2
+            "13": linux-x86_64

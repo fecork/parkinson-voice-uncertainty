@@ -13,7 +13,7 @@ soundfile>=0.10.3
 scipy>=1.7.0
 
 # Hyperparameter optimization
-talos>=0.6.5
+optuna>=3.0.0
 
 # Jupyter and visualization
 jupyter>=1.0.0

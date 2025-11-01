@@ -1,0 +1,27 @@
+{
+  "os": "Linux-6.6.105+-x86_64-with-glibc2.35",
+  "python": "CPython 3.12.12",
+  "startedAt": "2025-10-31T22:19:27.323129Z",
+  "program": "cnn2d_training.ipynb",
+  "git": {
+    "remote": "https://github.com/fecork/parkinson-voice-uncertainty.git",
+    "commit": "c5390b2b1e856dd099d2376c4ff5552bec0b4ff9"
+  },
+  "email": "fecork88@gmail.com",
+  "root": "/content/drive/Othercomputers/ZenBook/parkinson-voice-uncertainty",
+  "host": "3aae80b01266",
+  "executable": "/usr/bin/python3",
+  "colab": "https://colab.research.google.com/notebook#fileId=1EAdebEH1x_s-pFpKs6lwQEaQRSsFC2vx",
+  "cpu_count": 1,
+  "cpu_count_logical": 2,
+  "disk": {
+    "/": {
+      "total": "242486079488",
+      "used": "44993867776"
+    }
+  },
+  "memory": {
+    "total": "13605851136"
+  },
+  "writerId": "5e506exlwefhccu426psxf095rwk1g48"
+}

@@ -1,0 +1,15 @@
+{
+  "use_ibarra_hyperparameters": false,
+  "ibarra_hyperparameters": {
+    "kernel_size_1": 6,
+    "kernel_size_2": 9,
+    "filters_1": 64,
+    "filters_2": 64,
+    "dense_units": 32,
+    "p_drop_conv": 0.2,
+    "p_drop_fc": 0.2,
+    "batch_size": 64,
+    "source": "ibarra_2023_paper"
+  },
+  "description": "Configuraci\u00f3n de hiperpar\u00e1metros: Ibarra (paper) vs Optuna (optimizado)"
+}

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import time
 import json
+import contextlib
 
 import numpy as np
 import torch
@@ -23,6 +24,29 @@ from sklearn.metrics import (
 )
 
 
+try:
+    import wandb
+except Exception:
+    wandb = None
+
+
+@contextlib.contextmanager
+def disable_wandb_hooks():
+    """
+    Context manager para desactivar temporalmente los hooks de wandb.
+    Útil cuando se evalúa un modelo fuera del contexto de wandb.
+    """
+    if wandb is None:
+        yield
+        return
+    original_wandb_run = wandb.run
+    wandb.run = None
+    try:
+        yield
+    finally:
+        wandb.run = original_wandb_run
+
+
 # ============================================================
 # EARLY STOPPING
 # ============================================================
@@ -31,7 +55,6 @@ from sklearn.metrics import (
 # EarlyStopping movida a modules.models.common.layers
 from ..common.training_utils import (
     EarlyStopping,
-    compute_metrics,
     compute_class_weights_auto,
 )
 
@@ -59,7 +82,7 @@ def train_one_epoch(
         device: Device para cómputo
 
     Returns:
-        Dict con métricas: loss, accuracy, precision, recall, f1
+        Dict con métricas: loss, accuracy, recall (sensitivity), specificity, f1
     """
     model.train()
 
@@ -91,12 +114,17 @@ def train_one_epoch(
     n_samples = len(all_labels)
     avg_loss = total_loss / n_samples
 
+    # Calcular métricas según paper Ibarra 2023: ACC, SEN, SPE, F1
+    cm = confusion_matrix(all_labels, all_preds, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+
     metrics = {
         "loss": avg_loss,
         "accuracy": accuracy_score(all_labels, all_preds),
-        "precision": precision_score(all_labels, all_preds, zero_division=0),
-        "recall": recall_score(all_labels, all_preds, zero_division=0),
-        "f1": f1_score(all_labels, all_preds, zero_division=0),
+        "recall": recall_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
+        "specificity": specificity,
+        "f1": f1_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
     }
 
     return metrics
@@ -104,7 +132,10 @@ def train_one_epoch(
 
 @torch.no_grad()
 def evaluate(
-    model: nn.Module, loader: DataLoader, criterion: nn.Module, device: torch.device
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device,
 ) -> Dict[str, float]:
     """
     Evalúa el modelo.
@@ -116,7 +147,7 @@ def evaluate(
         device: Device para cómputo
 
     Returns:
-        Dict con métricas: loss, accuracy, precision, recall, f1
+        Dict con métricas: loss, accuracy, recall (sensitivity), specificity, f1
     """
     model.eval()
 
@@ -143,12 +174,17 @@ def evaluate(
     n_samples = len(all_labels)
     avg_loss = total_loss / n_samples
 
+    # Calcular métricas según paper Ibarra 2023: ACC, SEN, SPE, F1
+    cm = confusion_matrix(all_labels, all_preds, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+
     metrics = {
         "loss": avg_loss,
         "accuracy": accuracy_score(all_labels, all_preds),
-        "precision": precision_score(all_labels, all_preds, zero_division=0),
-        "recall": recall_score(all_labels, all_preds, zero_division=0),
-        "f1": f1_score(all_labels, all_preds, zero_division=0),
+        "recall": recall_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
+        "specificity": specificity,
+        "f1": f1_score(all_labels, all_preds, average="binary", pos_label=1, zero_division=0),
     }
 
     return metrics
@@ -171,6 +207,7 @@ def train_model(
     save_dir: Optional[Path] = None,
     verbose: bool = True,
     scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
+    monitor_metric: str = "f1",  # NUEVO: métrica a monitorear ("loss" o "f1")
 ) -> Dict:
     """
     Pipeline completo de entrenamiento.
@@ -187,6 +224,8 @@ def train_model(
         save_dir: Directorio para guardar checkpoints
         verbose: Si True, imprime progreso
         scheduler: Scheduler opcional para ajuste de learning rate
+        monitor_metric: Métrica para early stopping ("loss" o "f1")
+                       Default: "f1" (recomendado para datasets desbalanceados)
 
     Returns:
         Dict con historial de entrenamiento y mejor modelo
@@ -196,9 +235,11 @@ def train_model(
         save_dir.mkdir(parents=True, exist_ok=True)
 
     # Early stopping
+    # Si monitoreamos F1, queremos maximizar; si monitoreamos loss, minimizar
+    mode = "max" if monitor_metric == "f1" else "min"
     early_stopping = EarlyStopping(
         patience=early_stopping_patience,
-        mode="min",  # Minimizar val_loss
+        mode=mode,
     )
 
     # Historial
@@ -206,12 +247,21 @@ def train_model(
         "train_loss": [],
         "train_acc": [],
         "train_f1": [],
+        "train_recall": [],
+        "train_specificity": [],
         "val_loss": [],
         "val_acc": [],
         "val_f1": [],
+        "val_recall": [],
+        "val_specificity": [],
     }
 
-    best_val_loss = float("inf")
+    # Inicializar best metric según lo que monitoreamos
+    if monitor_metric == "f1":
+        best_val_metric = -float("inf")  # Queremos maximizar F1
+    else:
+        best_val_metric = float("inf")  # Queremos minimizar loss
+
     best_model_state = None
 
     if verbose:
@@ -220,6 +270,7 @@ def train_model(
         print("=" * 70)
         print(f"Épocas máximas: {n_epochs}")
         print(f"Early stopping patience: {early_stopping_patience}")
+        print(f"Métrica monitoreada: val_{monitor_metric}")
         print(f"Device: {device}")
         print("=" * 70 + "\n")
 
@@ -240,18 +291,36 @@ def train_model(
         history["train_loss"].append(train_metrics["loss"])
         history["train_acc"].append(train_metrics["accuracy"])
         history["train_f1"].append(train_metrics["f1"])
+        history["train_recall"].append(train_metrics["recall"])
+        history["train_specificity"].append(train_metrics["specificity"])
         history["val_loss"].append(val_metrics["loss"])
         history["val_acc"].append(val_metrics["accuracy"])
         history["val_f1"].append(val_metrics["f1"])
+        history["val_recall"].append(val_metrics["recall"])
+        history["val_specificity"].append(val_metrics["specificity"])
 
         # Actualizar scheduler si está disponible
         if scheduler is not None:
-            scheduler.step(val_metrics["loss"])
+            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                scheduler.step(val_metrics["loss"])
+            else:
+                scheduler.step()
 
-        # Guardar mejor modelo
-        if val_metrics["loss"] < best_val_loss:
-            best_val_loss = val_metrics["loss"]
-            best_model_state = model.state_dict().copy()
+        # Obtener métrica actual
+        current_metric = val_metrics[monitor_metric]
+
+        # Guardar mejor modelo según la métrica monitoreada
+        is_better = False
+        if monitor_metric == "f1":
+            is_better = current_metric > best_val_metric
+        else:
+            is_better = current_metric < best_val_metric
+
+        if is_better:
+            best_val_metric = current_metric
+            best_model_state = {
+                k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+            }
 
             if save_dir is not None:
                 checkpoint_path = save_dir / "best_model.pth"
@@ -260,8 +329,11 @@ def train_model(
                         "epoch": epoch,
                         "model_state_dict": best_model_state,
                         "optimizer_state_dict": optimizer.state_dict(),
-                        "val_loss": best_val_loss,
+                        "val_loss": val_metrics["loss"],
+                        "val_f1": val_metrics["f1"],
                         "val_metrics": val_metrics,
+                        "monitor_metric": monitor_metric,
+                        "best_val_metric": best_val_metric,
                     },
                     checkpoint_path,
                 )
@@ -272,19 +344,27 @@ def train_model(
         if verbose:
             print(
                 f"Época {epoch + 1:3d}/{n_epochs} | "
-                f"Train Loss: {train_metrics['loss']:.4f} | "
-                f"Train F1: {train_metrics['f1']:.4f} | "
-                f"Val Loss: {val_metrics['loss']:.4f} | "
-                f"Val F1: {val_metrics['f1']:.4f} | "
+                f"Train - Loss: {train_metrics['loss']:.4f} | "
+                f"F1: {train_metrics['f1']:.4f} | "
+                f"Acc: {train_metrics['accuracy']:.4f} | "
+                f"Rec: {train_metrics['recall']:.4f} | "
+                f"Spec: {train_metrics['specificity']:.4f} | "
+                f"Val - Loss: {val_metrics['loss']:.4f} | "
+                f"F1: {val_metrics['f1']:.4f} | "
+                f"Acc: {val_metrics['accuracy']:.4f} | "
+                f"Rec: {val_metrics['recall']:.4f} | "
+                f"Spec: {val_metrics['specificity']:.4f} | "
                 f"Time: {epoch_time:.1f}s"
             )
 
-        # Early stopping
-        if early_stopping(val_metrics["loss"], epoch):
+        # Early stopping usando la métrica correcta
+        if early_stopping(current_metric, epoch):
             if verbose:
                 print(f"\n⚠️  Early stopping en época {epoch + 1}")
                 print(f"    Mejor época: {early_stopping.best_epoch + 1}")
-                print(f"    Mejor val_loss: {early_stopping.best_score:.4f}")
+                print(
+                    f"    Mejor val_{monitor_metric}: {early_stopping.best_score:.4f}"
+                )
             break
 
     total_time = time.time() - start_time
@@ -294,17 +374,26 @@ def train_model(
         print("ENTRENAMIENTO COMPLETADO")
         print("=" * 70)
         print(f"Tiempo total: {total_time / 60:.1f} minutos")
-        print(f"Mejor val_loss: {best_val_loss:.4f}")
+        print(f"Mejor val_{monitor_metric}: {best_val_metric:.4f}")
         print("=" * 70 + "\n")
 
     # Restaurar mejor modelo
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
 
+    # Obtener best_val_loss para compatibilidad
+    if monitor_metric == "loss":
+        best_val_loss = best_val_metric
+    else:
+        best_f1_idx = history["val_f1"].index(max(history["val_f1"]))
+        best_val_loss = history["val_loss"][best_f1_idx]
+
     return {
         "model": model,
         "history": history,
         "best_val_loss": best_val_loss,
+        "best_val_metric": best_val_metric,
+        "monitor_metric": monitor_metric,
         "total_time": total_time,
     }
 
@@ -342,18 +431,20 @@ def detailed_evaluation(
     all_labels = []
     all_probs = []
 
-    for batch in loader:
-        specs = batch["spectrogram"].to(device)
-        labels = batch["label"].to(device)
+    # Desactivar wandb hooks temporalmente para evitar errores
+    with disable_wandb_hooks():
+        for batch in loader:
+            specs = batch["spectrogram"].to(device)
+            labels = batch["label"].to(device)
 
-        # Forward pass
-        logits = model(specs)
-        probs = torch.softmax(logits, dim=1)
-        preds = logits.argmax(dim=1)
+            # Forward pass
+            logits = model(specs)
+            probs = torch.softmax(logits, dim=1)
+            preds = logits.argmax(dim=1)
 
-        all_preds.extend(preds.cpu().numpy())
-        all_labels.extend(labels.cpu().numpy())
-        all_probs.extend(probs.cpu().numpy())
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
 
     all_preds = np.array(all_preds)
     all_labels = np.array(all_labels)
@@ -391,13 +482,13 @@ def print_evaluation_report(eval_results: Dict, class_names: List[str] = None):
     print("REPORTE DE EVALUACIÓN")
     print("=" * 70)
 
-    print("\n📊 MATRIZ DE CONFUSIÓN:")
+    print("\nMATRIZ DE CONFUSIÓN:")
     cm = eval_results["confusion_matrix"]
-    print(f"              Pred HC  Pred PD")
+    print("              Pred HC  Pred PD")
     print(f"Real HC       {cm[0, 0]:7d}  {cm[0, 1]:7d}")
     print(f"Real PD       {cm[1, 0]:7d}  {cm[1, 1]:7d}")
 
-    print("\n📈 MÉTRICAS POR CLASE:")
+    print("\nMÉTRICAS POR CLASE:")
     report = eval_results["classification_report"]
     for class_name in class_names:
         if class_name in report:
@@ -408,7 +499,7 @@ def print_evaluation_report(eval_results: Dict, class_names: List[str] = None):
             print(f"  F1-Score:  {metrics['f1-score']:.4f}")
             print(f"  Support:   {metrics['support']}")
 
-    print("\n🎯 MÉTRICAS GLOBALES:")
+    print("\nMÉTRICAS GLOBALES:")
     print(f"  Accuracy:  {eval_results['accuracy']:.4f}")
     print(f"  F1 Macro:  {eval_results['f1_macro']:.4f}")
 
@@ -444,7 +535,7 @@ def save_training_results(results: Dict, save_dir: Path, prefix: str = "training
     with open(history_path, "w") as f:
         json.dump(serializable_history, f, indent=2)
 
-    print(f"💾 Historial guardado en: {history_path}")
+    print(f"Historial guardado en: {history_path}")
 
 
 def load_checkpoint(
@@ -453,7 +544,7 @@ def load_checkpoint(
     optimizer: Optional[torch.optim.Optimizer] = None,
 ) -> Dict:
     """
-    Carga checkpoint.
+    Carga checkpoint de forma segura, compatible con checkpoints entrenados en GPU o CPU.
 
     Args:
         checkpoint_path: Ruta al checkpoint
@@ -463,16 +554,22 @@ def load_checkpoint(
     Returns:
         Dict con información del checkpoint
     """
-    checkpoint = torch.load(checkpoint_path)
+    # Cargar checkpoint de forma segura, siempre en CPU
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
     model.load_state_dict(checkpoint["model_state_dict"])
 
     if optimizer is not None and "optimizer_state_dict" in checkpoint:
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-    print(f"✅ Checkpoint cargado desde: {checkpoint_path}")
+    print(f"Checkpoint cargado desde: {checkpoint_path}")
     print(f"   Época: {checkpoint.get('epoch', 'N/A')}")
-    print(f"   Val Loss: {checkpoint.get('val_loss', 'N/A'):.4f}")
+
+    val_loss = checkpoint.get("val_loss", None)
+    if isinstance(val_loss, (int, float)):
+        print(f"   Val Loss: {val_loss:.4f}")
+    else:
+        print("   Val Loss: N/A")
 
     return checkpoint
 
@@ -595,7 +692,9 @@ def train_one_epoch_da(
         "loss_total": total_loss / n_samples,
         "acc_pd": accuracy_score(all_labels_pd, all_preds_pd),
         "acc_domain": accuracy_score(all_labels_domain, all_preds_domain),
-        "f1_pd": f1_score(all_labels_pd, all_preds_pd, zero_division=0),
+        "f1_pd": f1_score(
+            all_labels_pd, all_preds_pd, average="macro", zero_division=0
+        ),
     }
 
     return metrics
@@ -634,39 +733,42 @@ def evaluate_da(
     all_preds_domain = []
     all_labels_domain = []
 
-    for batch in loader:
-        # Desempaquetar batch
-        if len(batch) == 3:
-            specs, labels_pd, labels_domain = batch
-            specs = specs.to(device)
-            labels_pd = labels_pd.to(device)
-            labels_domain = labels_domain.to(device)
-        else:
-            specs = batch["spectrogram"].to(device)
-            labels_pd = batch["label"].to(device)
-            labels_domain = batch.get("domain", torch.zeros_like(labels_pd)).to(device)
+    with disable_wandb_hooks():
+        for batch in loader:
+            # Desempaquetar batch
+            if len(batch) == 3:
+                specs, labels_pd, labels_domain = batch
+                specs = specs.to(device)
+                labels_pd = labels_pd.to(device)
+                labels_domain = labels_domain.to(device)
+            else:
+                specs = batch["spectrogram"].to(device)
+                labels_pd = batch["label"].to(device)
+                labels_domain = batch.get("domain", torch.zeros_like(labels_pd)).to(
+                    device
+                )
 
-        # Forward pass
-        logits_pd, logits_domain = model(specs)
+            # Forward pass
+            logits_pd, logits_domain = model(specs)
 
-        # Calcular pérdidas
-        loss_pd = criterion_pd(logits_pd, labels_pd)
-        loss_domain = criterion_domain(logits_domain, labels_domain)
-        loss = loss_pd + alpha * loss_domain
+            # Calcular pérdidas
+            loss_pd = criterion_pd(logits_pd, labels_pd)
+            loss_domain = criterion_domain(logits_domain, labels_domain)
+            loss = loss_pd + alpha * loss_domain
 
-        # Métricas
-        batch_size = specs.size(0)
-        total_loss_pd += loss_pd.item() * batch_size
-        total_loss_domain += loss_domain.item() * batch_size
-        total_loss += loss.item() * batch_size
+            # Métricas
+            batch_size = specs.size(0)
+            total_loss_pd += loss_pd.item() * batch_size
+            total_loss_domain += loss_domain.item() * batch_size
+            total_loss += loss.item() * batch_size
 
-        preds_pd = logits_pd.argmax(dim=1)
-        preds_domain = logits_domain.argmax(dim=1)
+            preds_pd = logits_pd.argmax(dim=1)
+            preds_domain = logits_domain.argmax(dim=1)
 
-        all_preds_pd.extend(preds_pd.cpu().numpy())
-        all_labels_pd.extend(labels_pd.cpu().numpy())
-        all_preds_domain.extend(preds_domain.cpu().numpy())
-        all_labels_domain.extend(labels_domain.cpu().numpy())
+            all_preds_pd.extend(preds_pd.cpu().numpy())
+            all_labels_pd.extend(labels_pd.cpu().numpy())
+            all_preds_domain.extend(preds_domain.cpu().numpy())
+            all_labels_domain.extend(labels_domain.cpu().numpy())
 
     # Calcular métricas promedio
     n_samples = len(all_labels_pd)
@@ -677,7 +779,9 @@ def evaluate_da(
         "loss_total": total_loss / n_samples,
         "acc_pd": accuracy_score(all_labels_pd, all_preds_pd),
         "acc_domain": accuracy_score(all_labels_domain, all_preds_domain),
-        "f1_pd": f1_score(all_labels_pd, all_preds_pd, zero_division=0),
+        "f1_pd": f1_score(
+            all_labels_pd, all_preds_pd, average="macro", zero_division=0
+        ),
         "precision_pd": precision_score(all_labels_pd, all_preds_pd, zero_division=0),
         "recall_pd": recall_score(all_labels_pd, all_preds_pd, zero_division=0),
     }
@@ -806,7 +910,9 @@ def train_model_da(
         # Guardar mejor modelo
         if val_metrics["loss_pd"] < best_val_loss_pd:
             best_val_loss_pd = val_metrics["loss_pd"]
-            best_model_state = model.state_dict().copy()
+            best_model_state = {
+                k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+            }
 
             if save_dir is not None:
                 checkpoint_path = save_dir / "best_model_da.pth"
@@ -902,8 +1008,9 @@ def evaluate_by_patient_da(
     X_test = X_test.to(device)
 
     # Forward pass para obtener probabilidades
-    logits_pd, _ = model(X_test)
-    probs = torch.softmax(logits_pd, dim=1).cpu().numpy()
+    with disable_wandb_hooks():
+        logits_pd, _ = model(X_test)
+        probs = torch.softmax(logits_pd, dim=1).cpu().numpy()
 
     # Agrupar por paciente
     patient_probs = {}
@@ -1006,10 +1113,7 @@ def train_model_da_kfold(
         Dict con métricas agregadas de todos los folds
     """
     from torch.utils.data import DataLoader, Subset
-    from .utils import (
-        create_10fold_splits_by_speaker,
-        compute_class_weights_auto,
-    )
+    from .utils import create_10fold_splits_by_speaker
 
     if save_dir is not None:
         save_dir = Path(save_dir)
@@ -1105,7 +1209,7 @@ def train_model_da_kfold(
             optimizer, step_size=30, gamma=0.1
         )
 
-        print(f"\n   ⚙️  Configuración:")
+        print("\n   Configuración:")
         print(f"      Optimizer: SGD (lr={lr}, momentum=0.9, wd=1e-4)")
         print(f"      LR Scheduler: StepLR (step=30, gamma=0.1)")
         print(f"      Lambda GRL: {lambda_constant} (constante)")
@@ -1148,7 +1252,7 @@ def train_model_da_kfold(
 
         fold_histories.append(fold_results["history"])
 
-        print(f"\n   ✅ Fold {fold_idx + 1} completado:")
+        print(f"\n   Fold {fold_idx + 1} completado:")
         print(f"      Best val_loss_pd: {fold_results['best_val_loss_pd']:.4f}")
         print(f"      Tiempo: {fold_results['total_time'] / 60:.1f} min")
 
@@ -1161,7 +1265,7 @@ def train_model_da_kfold(
     mean_loss = np.mean(val_losses)
     std_loss = np.std(val_losses)
 
-    print(f"\n📊 Métricas agregadas (10 folds):")
+    print("\nMétricas agregadas (10 folds):")
     print(f"   Val Loss PD: {mean_loss:.4f} ± {std_loss:.4f}")
     print(f"\n   Por fold:")
     for fold in all_fold_results:
@@ -1195,7 +1299,7 @@ def train_model_da_kfold(
                 f,
                 indent=2,
             )
-        print(f"\n💾 Resultados guardados: {results_path}")
+        print(f"\nResultados guardados: {results_path}")
 
     print("=" * 70 + "\n")
 

@@ -34,7 +34,6 @@ from .utils import (
     split_by_speaker,
     create_dataloaders_from_existing,
     compute_class_weights_from_dataset,
-    compute_class_weights_auto,
     plot_confusion_matrix,
 )
 
@@ -64,6 +63,5 @@ __all__ = [
     "split_by_speaker",
     "create_dataloaders_from_existing",
     "compute_class_weights_from_dataset",
-    "compute_class_weights_auto",
     "plot_confusion_matrix",
 ]
